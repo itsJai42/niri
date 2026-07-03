@@ -3098,6 +3098,35 @@ impl State {
             false
         };
 
+        // Treat Mod + horizontal wheel as direct workspace scrolling instead of a discrete bind.
+        if source == AxisSource::Wheel && !is_overview_open {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let horizontal = event
+                .amount(Axis::Horizontal)
+                .unwrap_or_else(|| horizontal_amount_v120.unwrap_or(0.) / 120. * 15.);
+
+            if modifiers_from_state(mods) == mod_key.to_modifiers() && horizontal != 0. {
+                if let Some((output, ws_id)) = self
+                    .niri
+                    .workspace_under_cursor(true)
+                    .map(|(output, ws)| (output, ws.id()))
+                {
+                    let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+                    self.niri
+                        .layout
+                        .view_offset_gesture_begin(&output, Some(ws_idx), false, true);
+                    self.niri
+                        .layout
+                        .view_offset_gesture_update(horizontal, timestamp, false);
+                    self.niri.layout.view_offset_gesture_end(Some(false));
+                    self.niri.queue_redraw(&output);
+                }
+
+                self.niri.horizontal_wheel_tracker.reset();
+                return;
+            }
+        }
+
         let is_mru_open = self.niri.window_mru_ui.is_open();
 
         // Handle wheel scroll bindings.
