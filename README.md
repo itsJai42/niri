@@ -2,15 +2,15 @@
 <p align="center">A scrollable-tiling Wayland compositor — community-driven, feature-forward.</p>
 <p align="center">
     <!-- <a href="https://matrix.to/#/#niri-next:matrix.org"><img alt="Matrix" src="https://img.shields.io/badge/matrix-%23niri--next-blue?logo=matrix"></a> -->
-    <a href="https://github.com/itsJai42/niri-next/blob/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/niri-next/niri-next"></a>
-    <a href="https://github.com/itsJai42/niri-next/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/niri-next/niri-next?logo=github"></a>
+    <a href="https://github.com/itsJai42/niri-next/blob/main/LICENSE"><img alt="GitHub License" src="https://img.shields.io/github/license/itsJai42/niri-next"></a>
+    <a href="https://github.com/itsJai42/niri-next/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/itsJai42/niri-next?logo=github"></a>
 </p>
 
 <p align="center">
-    <a href="https://niri-next.github.io/niri-next/Getting-Started.html">Getting Started</a> | <a href="https://niri-next.github.io/niri-next/Configuration%3A-Introduction.html">Configuration</a> | <a href="https://github.com/niri-next/niri-next/discussions/325">Setup&nbsp;Showcase</a>
+    <a href="https://niri.github.io/niri/Getting-Started.html">Getting Started</a> | <a href="https://niri.github.io/niri/Configuration%3A-Introduction.html">Configuration</a> | <a href="https://github.com/niri/niri/discussions/325">Setup&nbsp;Showcase</a>
 </p>
 
-<img width="1280" height="720" alt="niri-next with a few windows open" src="https://github.com/user-attachments/assets/dea5909e-1859-4aaa-9d88-d37f9663e00b" />
+<img width="1280" height="720" alt="niri with a few windows open" src="https://github.com/user-attachments/assets/dea5909e-1859-4aaa-9d88-d37f9663e00b" />
 
 ## About
 
@@ -31,20 +31,20 @@ When a monitor disconnects, its workspaces will move to another monitor, but upo
 ## Features
 
 - Built from the ground up for scrollable tiling
-- [Dynamic workspaces](https://niri-next.github.io/niri-next/Workspaces.html) like in GNOME
+- [Dynamic workspaces](https://niri.github.io/niri/Workspaces.html) like in GNOME
 - An [Overview](https://github.com/user-attachments/assets/379a5d1f-acdb-4c11-b36c-e85fd91f0995) that zooms out workspaces and windows
 - Built-in screenshot UI
 - Monitor and window screencasting through xdg-desktop-portal-gnome
-    - You can [block out](https://niri-next.github.io/niri-next/Configuration%3A-Window-Rules.html#block-out-from) sensitive windows from screencasts
-    - [Dynamic cast target](https://niri-next.github.io/niri-next/Screencasting.html#dynamic-screencast-target) that can change what it shows on the go
+    - You can [block out](https://niri.github.io/niri/Configuration%3A-Window-Rules.html#block-out-from) sensitive windows from screencasts
+    - [Dynamic cast target](https://niri.github.io/niri/Screencasting.html#dynamic-screencast-target) that can change what it shows on the go
 - [Touchpad](https://github.com/niri-wm/niri/assets/1794388/946a910e-9bec-4cd1-a923-4a9421707515) and [mouse](https://github.com/niri-wm/niri/assets/1794388/8464e65d-4bf2-44fa-8c8e-5883355bd000) gestures
-- Group windows into [tabs](https://niri-next.github.io/niri-next/Tabs.html)
+- Group windows into [tabs](https://niri.github.io/niri/Tabs.html)
 - Configurable layout: gaps, borders, struts, window sizes
-- [Gradient borders](https://niri-next.github.io/niri-next/Configuration%3A-Layout.html#gradients) with Oklab and Oklch support
-- [Background blur](https://niri-next.github.io/niri-next/Window-Effects.html) for windows and layer-shell surfaces
+- [Gradient borders](https://niri.github.io/niri/Configuration%3A-Layout.html#gradients) with Oklab and Oklch support
+- [Background blur](https://niri.github.io/niri/Window-Effects.html) for windows and layer-shell surfaces
 - [Animations](https://github.com/niri-wm/niri/assets/1794388/ce178da2-af9e-4c51-876f-8703c241d95e) with support for [custom shaders](https://github.com/niri-wm/niri/assets/1794388/27a238d6-0a22-4692-b794-30dc7a626fad)
 - Live-reloading config
-- Works with [screen readers](https://niri-next.github.io/niri-next/Accessibility.html)
+- Works with [screen readers](https://niri.github.io/niri-next/Accessibility.html)
 - **Community-driven**: lighter PR review process — good ideas get merged faster
 - **Rolling features**: improvements land as they're ready, not gated behind major releases
 - **Upstream tracking**: regular merges from [niri](https://github.com/niri-wm/niri) keep the base stable and current
@@ -61,10 +61,9 @@ Also check out these videos that showcase a lot of the niri/niri-next functional
 ## Status
 
 Niri-next is stable for day-to-day use and does most things expected of a Wayland compositor.
-Many people are daily-driving niri-next, and are happy to help in our [Matrix channel].
 
 Give it a try!
-Follow the instructions on the [Getting Started](https://niri-next.github.io/niri-next/Getting-Started.html) page.
+Follow the instructions on the [Getting Started](https://niri.github.io/niri/Getting-Started.html) page.
 Grab a desktop shell like [DankMaterialShell] or [Noctalia] (or build a more traditional setup): niri-next by itself is not a complete desktop environment.
 Also check out [awesome-niri], a list of niri-related links and projects.
 
