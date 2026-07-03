@@ -1519,7 +1519,7 @@ impl Op {
                     return;
                 };
 
-                layout.view_offset_gesture_begin(&output, workspace_idx, normalize);
+                layout.view_offset_gesture_begin(&output, workspace_idx, normalize, false);
             }
             Op::ViewOffsetGestureUpdate {
                 delta,

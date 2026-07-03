@@ -1868,8 +1868,9 @@ impl<W: LayoutElement> Workspace<W> {
         self.scrolling.insert_hint_area(position)
     }
 
-    pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {
-        self.scrolling.view_offset_gesture_begin(is_touchpad);
+    pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool, free_scroll: bool) {
+        self.scrolling
+            .view_offset_gesture_begin(is_touchpad, free_scroll);
     }
 
     pub fn view_offset_gesture_update(

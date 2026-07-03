@@ -2819,8 +2819,8 @@ impl State {
                     };
                     self.niri
                         .layout
-                        .view_offset_gesture_begin(&output, Some(ws_idx), false);
-                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true);
+                        .view_offset_gesture_begin(&output, Some(ws_idx), false, false);
+                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true, false);
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                     self.niri
                         .cursor_manager
@@ -2857,7 +2857,10 @@ impl State {
                             button: button_code,
                             location,
                         };
-                        let grab = SpatialMovementGrab::new(start_data, output, ws_id, false);
+                        let free_scroll =
+                            modifiers_from_state(mods).contains(Modifiers::CTRL);
+                        let grab =
+                            SpatialMovementGrab::new(start_data, output, ws_id, false, free_scroll);
                         pointer.set_grab(self, grab, serial, Focus::Clear);
                         self.niri
                             .cursor_manager
@@ -3322,6 +3325,7 @@ impl State {
                                     &output,
                                     Some(ws_idx),
                                     true,
+                                    false,
                                 );
                                 redraw = true;
                             }
@@ -3828,7 +3832,7 @@ impl State {
                             let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
                             self.niri
                                 .layout
-                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                                .view_offset_gesture_begin(&output, Some(ws_idx), true, false);
                         }
                     } else {
                         self.niri

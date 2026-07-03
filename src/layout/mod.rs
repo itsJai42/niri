@@ -3650,6 +3650,7 @@ impl<W: LayoutElement> Layout<W> {
         output: &Output,
         workspace_idx: Option<usize>,
         is_touchpad: bool,
+        free_scroll: bool,
     ) {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
@@ -3666,7 +3667,7 @@ impl<W: LayoutElement> Layout<W> {
                     continue;
                 }
 
-                ws.view_offset_gesture_begin(is_touchpad);
+                ws.view_offset_gesture_begin(is_touchpad, free_scroll);
             }
         }
     }

@@ -20,6 +20,7 @@ pub struct SpatialMovementGrab {
     output: Output,
     workspace_id: WorkspaceId,
     gesture: GestureState,
+    free_scroll: bool,
 
     // Accumulated and applied in frame().
     new_location: Point<f64, Logical>,
@@ -40,6 +41,7 @@ impl SpatialMovementGrab {
         output: Output,
         workspace_id: WorkspaceId,
         is_view_offset: bool,
+        free_scroll: bool,
     ) -> Self {
         let location = start_data.location;
         let gesture = if is_view_offset {
@@ -54,6 +56,7 @@ impl SpatialMovementGrab {
             output,
             workspace_id,
             gesture,
+            free_scroll,
             new_location: location,
             event_timestamp: None,
             relative_delta: None,
@@ -90,7 +93,12 @@ impl SpatialMovementGrab {
                         self.gesture = GestureState::ViewOffset;
                         if let Some((ws_idx, ws)) = layout.find_workspace_by_id(self.workspace_id) {
                             if ws.current_output() == Some(&self.output) {
-                                layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
+                                layout.view_offset_gesture_begin(
+                                    &self.output,
+                                    Some(ws_idx),
+                                    false,
+                                    self.free_scroll,
+                                );
                                 layout.view_offset_gesture_update(-c.x, timestamp, false)
                             } else {
                                 None

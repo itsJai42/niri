@@ -194,7 +194,7 @@ impl TouchGrab<State> for TouchOverviewGrab {
                 if let Some(ws_id) = self.workspace_id.filter(|_| c.x.abs() > c.y.abs()) {
                     if let Some((ws_idx, ws)) = layout.find_workspace_by_id(ws_id) {
                         if ws.current_output() == Some(&self.output) {
-                            layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false);
+                            layout.view_offset_gesture_begin(&self.output, Some(ws_idx), false, false);
                             self.gesture = GestureState::ViewOffset;
                         }
                     }
