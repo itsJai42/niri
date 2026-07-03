@@ -2837,8 +2837,8 @@ impl State {
                     };
                     self.niri
                         .layout
-                        .view_offset_gesture_begin(&output, Some(ws_idx), false);
-                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true);
+                        .view_offset_gesture_begin(&output, Some(ws_idx), false, false);
+                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, true, false);
                     pointer.set_grab(self, grab, serial, Focus::Clear);
                     self.niri
                         .cursor_manager
@@ -2867,17 +2867,20 @@ impl State {
 
                     self.niri.layout.focus_output(&output);
 
-                    let location = pointer.current_location();
-                    let start_data = PointerGrabStartData {
-                        focus: None,
-                        button: button_code,
-                        location,
-                    };
-                    let grab = SpatialMovementGrab::new(start_data, output, ws_id, false);
-                    pointer.set_grab(self, grab, serial, Focus::Clear);
-                    self.niri
-                        .cursor_manager
-                        .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+                        let location = pointer.current_location();
+                        let start_data = PointerGrabStartData {
+                            focus: None,
+                            button: button_code,
+                            location,
+                        };
+                        let free_scroll =
+                            modifiers_from_state(mods).contains(Modifiers::CTRL);
+                        let grab =
+                            SpatialMovementGrab::new(start_data, output, ws_id, false, free_scroll);
+                        pointer.set_grab(self, grab, serial, Focus::Clear);
+                        self.niri
+                            .cursor_manager
+                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
 
                     // FIXME: granular.
                     self.niri.queue_redraw_all();
@@ -3110,6 +3113,38 @@ impl State {
         } else {
             false
         };
+
+        // Treat Mod + horizontal wheel as direct workspace scrolling instead of a discrete bind.
+        if source == AxisSource::Wheel && !is_overview_open {
+            let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
+            let horizontal = event
+                .amount(Axis::Horizontal)
+                .unwrap_or_else(|| horizontal_amount_v120.unwrap_or(0.) / 120. * 15.)
+                * 1.5;
+
+            if modifiers_from_state(mods) == mod_key.to_modifiers() && horizontal != 0. {
+                if let Some((output, ws_id)) = self
+                    .niri
+                    .workspace_under_cursor(true)
+                    .map(|(output, ws)| (output, ws.id()))
+                {
+                    let ws_idx = self.niri.layout.find_workspace_by_id(ws_id).unwrap().0;
+                    self.niri
+                        .layout
+                        .view_offset_gesture_begin(&output, Some(ws_idx), false, true);
+                    self.niri
+                        .layout
+                        .view_offset_gesture_update(horizontal, timestamp, false);
+                    self.niri
+                        .layout
+                        .view_offset_gesture_end_animated(Some(false));
+                    self.niri.queue_redraw(&output);
+                }
+
+                self.niri.horizontal_wheel_tracker.reset();
+                return;
+            }
+        }
 
         let is_mru_open = self.niri.window_mru_ui.is_open();
 
@@ -3354,6 +3389,7 @@ impl State {
                                     &output,
                                     Some(ws_idx),
                                     true,
+                                    false,
                                 );
                                 redraw = true;
                             }
@@ -3922,7 +3958,7 @@ impl State {
                             let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
                             self.niri
                                 .layout
-                                .view_offset_gesture_begin(&output, Some(ws_idx), true);
+                                .view_offset_gesture_begin(&output, Some(ws_idx), true, false);
                         }
                     } else {
                         self.niri

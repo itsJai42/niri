@@ -156,7 +156,7 @@ impl MoveGrab {
             return false;
         };
 
-        layout.view_offset_gesture_begin(&self.start_output, Some(ws_idx), false);
+        layout.view_offset_gesture_begin(&self.start_output, Some(ws_idx), false, false);
 
         self.gesture = GestureState::ViewOffset;
 

@@ -132,6 +132,8 @@ pub(super) struct ViewGesture {
     stationary_view_offset: f64,
     /// Whether the gesture is controlled by the touchpad.
     is_touchpad: bool,
+    /// Whether to preserve the exact view offset on gesture end instead of snapping.
+    free_scroll: bool,
 
     // If this gesture is for drag-and-drop scrolling, this is the last event's unadjusted
     // timestamp.
@@ -3009,7 +3011,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         None
     }
 
-    pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool) {
+    pub fn view_offset_gesture_begin(&mut self, is_touchpad: bool, free_scroll: bool) {
         if self.columns.is_empty() {
             return;
         }
@@ -3025,6 +3027,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad,
+            free_scroll,
             dnd_last_event_time: None,
             dnd_nonzero_start_time: None,
         };
@@ -3048,6 +3051,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             delta_from_tracker: self.view_offset.current(),
             stationary_view_offset: self.view_offset.stationary(),
             is_touchpad: false,
+            free_scroll: false,
             dnd_last_event_time: Some(self.clock.now_unadjusted()),
             dnd_nonzero_start_time: None,
         };
@@ -3158,7 +3162,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
-    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
+    pub fn view_offset_gesture_end(
+        &mut self,
+        is_touchpad: Option<bool>,
+        animate_free_scroll: bool,
+    ) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return false;
         };
@@ -3166,6 +3174,10 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if is_touchpad.is_some_and(|x| gesture.is_touchpad != x) {
             return false;
         }
+
+        let free_scroll = gesture.free_scroll;
+        let free_scroll_from = gesture.delta_from_tracker;
+        let free_scroll_target = gesture.stationary_view_offset;
 
         // We do not handle cancelling, just like GNOME Shell doesn't. For this gesture, proper
         // cancelling would require keeping track of the original active column, and then updating
@@ -3470,18 +3482,35 @@ impl<W: LayoutElement> ScrollingSpace<W> {
 
         self.active_column_idx = new_col_idx;
 
-        let target_view_offset = target_snap.view_pos - new_col_x;
+        if free_scroll {
+            // Free-scroll behavior: keep the view exactly where the gesture ended,
+            // while still updating the active column for keyboard focus.
+            if animate_free_scroll {
+                self.view_offset = ViewOffset::Animation(Animation::new(
+                    self.clock.clone(),
+                    free_scroll_from + delta,
+                    free_scroll_target + pos + delta,
+                    0.,
+                    self.options.animations.horizontal_view_movement.0,
+                ));
+            } else {
+                let _ = velocity;
+                self.view_offset = ViewOffset::Static(current_view_offset + delta);
+            }
+        } else {
+            let target_view_offset = target_snap.view_pos - new_col_x;
 
-        self.view_offset = ViewOffset::Animation(Animation::new(
-            self.clock.clone(),
-            current_view_offset + delta,
-            target_view_offset,
-            velocity,
-            self.options.animations.horizontal_view_movement.0,
-        ));
+            self.view_offset = ViewOffset::Animation(Animation::new(
+                self.clock.clone(),
+                current_view_offset + delta,
+                target_view_offset,
+                velocity,
+                self.options.animations.horizontal_view_movement.0,
+            ));
 
-        // HACK: deal with things like snapping to the right edge of a larger-than-view window.
-        self.animate_view_offset_to_column(None, new_col_idx, None);
+            // HACK: deal with things like snapping to the right edge of a larger-than-view window.
+            self.animate_view_offset_to_column(None, new_col_idx, None);
+        }
 
         true
     }
@@ -3511,7 +3540,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.view_offset_gesture_end(None);
+        self.view_offset_gesture_end(None, false);
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {
