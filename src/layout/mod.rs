@@ -3704,6 +3704,21 @@ impl<W: LayoutElement> Layout<W> {
     }
 
     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> Option<Output> {
+        self.view_offset_gesture_end_impl(is_touchpad, false)
+    }
+
+    pub fn view_offset_gesture_end_animated(
+        &mut self,
+        is_touchpad: Option<bool>,
+    ) -> Option<Output> {
+        self.view_offset_gesture_end_impl(is_touchpad, true)
+    }
+
+    fn view_offset_gesture_end_impl(
+        &mut self,
+        is_touchpad: Option<bool>,
+        animate_free_scroll: bool,
+    ) -> Option<Output> {
         let monitors = match &mut self.monitor_set {
             MonitorSet::Normal { monitors, .. } => monitors,
             MonitorSet::NoOutputs { .. } => return None,
@@ -3711,7 +3726,12 @@ impl<W: LayoutElement> Layout<W> {
 
         for monitor in monitors {
             for ws in &mut monitor.workspaces {
-                if ws.view_offset_gesture_end(is_touchpad) {
+                let ended = if animate_free_scroll {
+                    ws.view_offset_gesture_end_animated(is_touchpad)
+                } else {
+                    ws.view_offset_gesture_end(is_touchpad)
+                };
+                if ended {
                     return Some(monitor.output.clone());
                 }
             }

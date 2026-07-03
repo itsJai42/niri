@@ -3103,7 +3103,8 @@ impl State {
             let mods = self.niri.seat.get_keyboard().unwrap().modifier_state();
             let horizontal = event
                 .amount(Axis::Horizontal)
-                .unwrap_or_else(|| horizontal_amount_v120.unwrap_or(0.) / 120. * 15.);
+                .unwrap_or_else(|| horizontal_amount_v120.unwrap_or(0.) / 120. * 15.)
+                * 1.5;
 
             if modifiers_from_state(mods) == mod_key.to_modifiers() && horizontal != 0. {
                 if let Some((output, ws_id)) = self
@@ -3118,7 +3119,9 @@ impl State {
                     self.niri
                         .layout
                         .view_offset_gesture_update(horizontal, timestamp, false);
-                    self.niri.layout.view_offset_gesture_end(Some(false));
+                    self.niri
+                        .layout
+                        .view_offset_gesture_end_animated(Some(false));
                     self.niri.queue_redraw(&output);
                 }
 

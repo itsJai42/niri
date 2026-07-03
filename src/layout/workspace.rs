@@ -18,6 +18,8 @@ use smithay::wayland::compositor::with_states;
 use smithay::wayland::shell::xdg::SurfaceCachedState;
 
 use super::floating::{FloatingSpace, FloatingSpaceRenderElement};
+#[cfg(test)]
+use super::scrolling::ViewOffset;
 use super::scrolling::{
     Column, ColumnWidth, ScrollDirection, ScrollingSpace, ScrollingSpaceRenderElement,
 };
@@ -1884,7 +1886,16 @@ impl<W: LayoutElement> Workspace<W> {
     }
 
     pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
-        self.scrolling.view_offset_gesture_end(is_touchpad)
+        self.scrolling.view_offset_gesture_end(is_touchpad, false)
+    }
+
+    pub fn view_offset_gesture_end_animated(&mut self, is_touchpad: Option<bool>) -> bool {
+        self.scrolling.view_offset_gesture_end(is_touchpad, true)
+    }
+
+    #[cfg(test)]
+    pub(super) fn view_offset(&self) -> &ViewOffset {
+        self.scrolling.view_offset()
     }
 
     pub fn dnd_scroll_gesture_begin(&mut self) {

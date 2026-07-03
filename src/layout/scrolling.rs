@@ -3162,7 +3162,11 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         true
     }
 
-    pub fn view_offset_gesture_end(&mut self, is_touchpad: Option<bool>) -> bool {
+    pub fn view_offset_gesture_end(
+        &mut self,
+        is_touchpad: Option<bool>,
+        animate_free_scroll: bool,
+    ) -> bool {
         let ViewOffset::Gesture(gesture) = &mut self.view_offset else {
             return false;
         };
@@ -3172,6 +3176,8 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         }
 
         let free_scroll = gesture.free_scroll;
+        let free_scroll_from = gesture.delta_from_tracker;
+        let free_scroll_target = gesture.stationary_view_offset;
 
         // We do not handle cancelling, just like GNOME Shell doesn't. For this gesture, proper
         // cancelling would require keeping track of the original active column, and then updating
@@ -3479,8 +3485,18 @@ impl<W: LayoutElement> ScrollingSpace<W> {
         if free_scroll {
             // Free-scroll behavior: keep the view exactly where the gesture ended,
             // while still updating the active column for keyboard focus.
-            let _ = velocity;
-            self.view_offset = ViewOffset::Static(current_view_offset + delta);
+            if animate_free_scroll {
+                self.view_offset = ViewOffset::Animation(Animation::new(
+                    self.clock.clone(),
+                    free_scroll_from + delta,
+                    free_scroll_target + pos + delta,
+                    0.,
+                    self.options.animations.horizontal_view_movement.0,
+                ));
+            } else {
+                let _ = velocity;
+                self.view_offset = ViewOffset::Static(current_view_offset + delta);
+            }
         } else {
             let target_view_offset = target_snap.view_pos - new_col_x;
 
@@ -3524,7 +3540,7 @@ impl<W: LayoutElement> ScrollingSpace<W> {
             return;
         }
 
-        self.view_offset_gesture_end(None);
+        self.view_offset_gesture_end(None, false);
     }
 
     pub fn interactive_resize_begin(&mut self, window: W::Id, edges: ResizeEdge) -> bool {

@@ -12,6 +12,7 @@ use smithay::output::{Mode, PhysicalProperties, Subpixel};
 use smithay::utils::Rectangle;
 
 use super::*;
+use crate::layout::scrolling::ViewOffset;
 
 mod animations;
 mod fullscreen;
@@ -1652,6 +1653,33 @@ fn check_ops_with_options(
     let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
     check_ops_on_layout(&mut layout, ops);
     layout
+}
+
+#[test]
+fn animated_free_scroll_accumulates_targets() {
+    let mut layout = check_ops([
+        Op::AddOutput(0),
+        Op::AddWindow {
+            params: TestWindowParams::new(0),
+        },
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::CompleteAnimations,
+    ]);
+    let output = layout.active_output().unwrap().clone();
+    let initial = layout.active_workspace().unwrap().view_offset().target();
+
+    for delta in [10., 10.] {
+        layout.view_offset_gesture_begin(&output, None, false, true);
+        layout.view_offset_gesture_update(delta, Duration::ZERO, false);
+        layout.view_offset_gesture_end_animated(Some(false));
+    }
+
+    let ViewOffset::Animation(animation) = layout.active_workspace().unwrap().view_offset() else {
+        panic!("free scroll did not animate");
+    };
+    assert_eq!(animation.to(), initial + 20.);
 }
 
 #[test]
