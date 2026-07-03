@@ -122,16 +122,17 @@ Here are some other projects which implement a similar workflow:
 - [Paneru] and [PaperWM.spoon]: scrollable tiling on top of macOS.
 
 ## Useful Projects
+- [PaperWM](https://github.com/paperwm/PaperWM)
+- [waybar](https://github.com/Alexays/Waybar)
+- [fuzzel](https://codeberg.org/dnkl/fuzzel)
+- [awesome-niri](https://github.com/niri-wm/awesome-niri)
+- [karousel](https://github.com/peterfajdiga/karousel)
+- [papersway](https://spwhitton.name/tech/code/papersway/)
+- [Paneru](https://github.com/karinushka/paneru)
+- [PaperWM.spoon](https://github.com/mogenson/PaperWM.spoon)
+- [Matrix channel](https://matrix.to/#/#niri:matrix.org)
+- [OpenTabletDriver](https://opentabletdriver.net/)
+- [DankMaterialShell](https://danklinux.com/)
+- [Noctalia](https://noctalia.dev/)
 
-[PaperWM]: https://github.com/paperwm/PaperWM
-[waybar]: https://github.com/Alexays/Waybar
-[fuzzel]: https://codeberg.org/dnkl/fuzzel
-[awesome-niri]: https://github.com/niri-wm/awesome-niri
-[karousel]: https://github.com/peterfajdiga/karousel
-[papersway]: https://spwhitton.name/tech/code/papersway/
-[Paneru]: https://github.com/karinushka/paneru
-[PaperWM.spoon]: https://github.com/mogenson/PaperWM.spoon
-[Matrix channel]: https://matrix.to/#/#niri-next:matrix.org
-[OpenTabletDriver]: https://opentabletdriver.net/
-[DankMaterialShell]: https://danklinux.com/
-[Noctalia]: https://noctalia.dev/⏎ 
+
