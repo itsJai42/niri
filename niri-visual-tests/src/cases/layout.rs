@@ -274,6 +274,9 @@ impl TestCase for Layout {
             renderer,
             target: RenderTarget::Output,
             xray: None,
+            color_managed: false,
+            tone_map_to_sdr: false,
+            sdr_reference_luminance: 203.0,
         };
         self.layout
             .monitor_for_output(&self.output)

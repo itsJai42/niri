@@ -1168,13 +1168,22 @@ impl<W: LayoutElement> Tile<W> {
         if !pushed_resize {
             let geo = Rectangle::new(window_render_loc, window_size);
             let radius = radius.fit_to(window_size.w as f32, window_size.h as f32);
+            let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer, false).cloned();
+            let color_clip_shader =
+                ClippedSurfaceRenderElement::shader(ctx.renderer, true).cloned();
+            let has_clip_shader =
+                clip_shader.is_some() && (!ctx.color_managed || color_clip_shader.is_some());
 
-            let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
             let clip = |elem| match elem {
-                LayoutElementRenderElement::Wayland(elem) => {
+                LayoutElementRenderElement::Surface(elem) => {
                     // If we should clip to geometry, render a clipped window.
                     if clip_to_geometry {
-                        if let Some(shader) = clip_shader.clone() {
+                        let shader = if elem.is_color_managed() {
+                            color_clip_shader.clone()
+                        } else {
+                            clip_shader.clone()
+                        };
+                        if let Some(shader) = shader {
                             if ClippedSurfaceRenderElement::will_clip(&elem, scale, geo, radius) {
                                 return ClippedSurfaceRenderElement::new(
                                     elem,
@@ -1189,7 +1198,7 @@ impl<W: LayoutElement> Tile<W> {
                     }
 
                     // Otherwise, render it normally.
-                    LayoutElementRenderElement::Wayland(elem).into()
+                    LayoutElementRenderElement::Surface(elem).into()
                 }
                 LayoutElementRenderElement::SolidColor(elem) => {
                     // In this branch we're rendering a blocked-out window with a solid
@@ -1227,7 +1236,7 @@ impl<W: LayoutElement> Tile<W> {
                 }
             };
 
-            if clip_to_geometry && clip_shader.is_some() {
+            if clip_to_geometry && has_clip_shader {
                 let damage = self.rounded_corner_damage.render(geo);
                 push(damage.into());
             }
@@ -1421,6 +1430,9 @@ impl<W: LayoutElement> Tile<W> {
                 target: RenderTarget::Output,
                 renderer,
                 xray: xray.as_deref(),
+                color_managed: false,
+                tone_map_to_sdr: false,
+                sdr_reference_luminance: 203.0,
             },
             Point::from((0., 0.)),
             xray_pos,
@@ -1472,6 +1484,9 @@ impl<W: LayoutElement> Tile<W> {
                         target: RenderTarget::Output,
                         renderer,
                         xray: Some(xray),
+                        color_managed: false,
+                        tone_map_to_sdr: false,
+                        sdr_reference_luminance: 203.0,
                     },
                     Point::from((0., 0.)),
                     xray_pos,
@@ -1492,6 +1507,9 @@ impl<W: LayoutElement> Tile<W> {
                 target: RenderTarget::Screencast,
                 renderer,
                 xray: xray.as_deref(),
+                color_managed: false,
+                tone_map_to_sdr: false,
+                sdr_reference_luminance: 203.0,
             },
             Point::from((0., 0.)),
             xray_pos,

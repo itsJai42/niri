@@ -32,7 +32,7 @@ impl Server {
 
     pub fn dispatch(&mut self) {
         self.event_loop
-            .dispatch(Duration::ZERO, &mut self.state)
+            .dispatch(Duration::from_millis(1), &mut self.state)
             .unwrap();
         self.state.refresh_and_flush_clients();
     }

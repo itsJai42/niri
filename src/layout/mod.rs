@@ -43,7 +43,6 @@ use niri_config::{
 };
 use niri_ipc::{ColumnDisplay, PositionChange, SizeChange, WindowLayout};
 use scrolling::{Column, ColumnWidth};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::RescaleRenderElement;
 use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
 use smithay::output::{self, Output};
@@ -112,7 +111,7 @@ pub struct SizeFrac;
 
 niri_render_elements! {
     LayoutElementRenderElement<R> => {
-        Wayland = WaylandSurfaceRenderElement<R>,
+        Surface = crate::render_helpers::surface::SurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         BackgroundEffect = BackgroundEffectElement,
     }

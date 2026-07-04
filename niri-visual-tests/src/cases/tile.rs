@@ -126,6 +126,9 @@ impl TestCase for Tile {
             renderer,
             target: RenderTarget::Output,
             xray: None,
+            color_managed: false,
+            tone_map_to_sdr: false,
+            sdr_reference_luminance: 203.0,
         };
         let xray_pos = XrayPos::new(location, 1.);
         self.tile
