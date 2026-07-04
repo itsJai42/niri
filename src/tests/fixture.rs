@@ -1,6 +1,10 @@
+use std::os::fd::AsFd as _;
 use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
+use std::time::Duration;
 
+use calloop::generic::Generic;
+use calloop::{EventLoop, Interest, LoopHandle, Mode, PostAction};
 use niri_config::Config;
 use smithay::output::Output;
 
@@ -9,6 +13,8 @@ use super::server::Server;
 use crate::niri::{NewClient, Niri};
 
 pub struct Fixture {
+    pub event_loop: EventLoop<'static, State>,
+    pub handle: LoopHandle<'static, State>,
     pub state: State,
 }
 
@@ -23,13 +29,35 @@ impl Fixture {
     }
 
     pub fn with_config(config: Config) -> Self {
+        let event_loop = EventLoop::try_new().unwrap();
+        let handle = event_loop.handle();
+
         let server = Server::new(config);
+        let fd = server.event_loop.as_fd().try_clone_to_owned().unwrap();
+        let source = Generic::new(fd, Interest::READ, Mode::Level);
+        handle
+            .insert_source(source, |_, _, state: &mut State| {
+                state.server.dispatch();
+                Ok(PostAction::Continue)
+            })
+            .unwrap();
+
         let state = State {
             server,
             clients: Vec::new(),
         };
 
-        Self { state }
+        Self {
+            event_loop,
+            handle,
+            state,
+        }
+    }
+
+    pub fn dispatch(&mut self) {
+        self.event_loop
+            .dispatch(Duration::ZERO, &mut self.state)
+            .unwrap();
     }
 
     pub fn niri_state(&mut self) -> &mut crate::niri::State {
@@ -78,6 +106,15 @@ impl Fixture {
         let client = Client::new(sock2);
         let id = client.id;
 
+        let fd = client.event_loop.as_fd().try_clone_to_owned().unwrap();
+        let source = Generic::new(fd, Interest::READ, Mode::Level);
+        self.handle
+            .insert_source(source, move |_, _, state: &mut State| {
+                state.client(id).dispatch();
+                Ok(PostAction::Continue)
+            })
+            .unwrap();
+
         self.state.clients.push(client);
         self.roundtrip(id);
         id
@@ -91,8 +128,7 @@ impl Fixture {
         let client = self.state.client(id);
         let data = client.send_sync();
         while !data.done.load(Ordering::Relaxed) {
-            self.state.server.dispatch();
-            self.state.client(id).dispatch();
+            self.dispatch();
         }
     }
 

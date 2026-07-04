@@ -94,11 +94,6 @@ input {
     // normal, 90, 180, 270, flipped, flipped-90, flipped-180 and flipped-270.
     transform "normal"
 
-    // Enable HDR when the display, renderer, and KMS path support HDR10.
-    // hdr "auto"
-    // Adjust SDR desktop white brightness while HDR is active, in cd/m².
-    // sdr-reference-luminance 203
-
     // Position of the output in the global coordinate space.
     // This affects directional monitor actions like "focus-monitor-left", and cursor movement.
     // The cursor can only move between directly adjacent outputs.

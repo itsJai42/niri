@@ -1236,28 +1236,6 @@ pub struct Output {
     pub logical: Option<LogicalOutput>,
     /// Maximum bits per channel (bit depth), if known.
     pub max_bpc: Option<u8>,
-    /// Whether EDID and connector properties report HDR10 support.
-    #[serde(default)]
-    pub hdr_supported: bool,
-    /// Whether HDR output signaling and composition are active.
-    #[serde(default)]
-    pub hdr_enabled: bool,
-    /// Configured HDR policy.
-    #[serde(default)]
-    pub hdr_mode: HdrMode,
-    /// HDR scanout framebuffer format when active. Composition is always ABGR16161616F.
-    #[serde(default)]
-    pub hdr_framebuffer_format: Option<HdrFramebufferFormat>,
-    /// Reason HDR is inactive when requested.
-    #[serde(default)]
-    pub hdr_reason: Option<HdrReason>,
-    /// SDR reference-white luminance used for HDR composition, in cd/m².
-    #[serde(default = "default_sdr_reference_luminance")]
-    pub sdr_reference_luminance: u16,
-}
-
-fn default_sdr_reference_luminance() -> u16 {
-    203
 }
 
 /// Output mode.
@@ -1345,84 +1323,6 @@ pub enum MaxBpc {
     /// 16-bit.
     #[serde(rename = "16")]
     _16 = 16,
-}
-
-/// Configured HDR output policy.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "lowercase")]
-pub enum HdrMode {
-    /// Force SDR output.
-    #[default]
-    Off,
-    /// Request HDR and report a fallback when unavailable.
-    On,
-    /// Enable HDR whenever all capability checks pass.
-    Auto,
-}
-
-impl std::fmt::Display for HdrMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Off => "off",
-            Self::On => "on",
-            Self::Auto => "auto",
-        })
-    }
-}
-
-/// Ten-bit framebuffer formats used for HDR scanout.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-pub enum HdrFramebufferFormat {
-    /// XRGB2101010.
-    Xrgb2101010,
-    /// XBGR2101010.
-    Xbgr2101010,
-    /// ARGB2101010.
-    Argb2101010,
-    /// ABGR2101010.
-    Abgr2101010,
-}
-
-impl std::fmt::Display for HdrFramebufferFormat {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Xrgb2101010 => "XRGB2101010",
-            Self::Xbgr2101010 => "XBGR2101010",
-            Self::Argb2101010 => "ARGB2101010",
-            Self::Abgr2101010 => "ABGR2101010",
-        })
-    }
-}
-
-/// Actionable reason why HDR is inactive.
-#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(feature = "json-schema", derive(schemars::JsonSchema))]
-#[serde(rename_all = "kebab-case")]
-pub enum HdrReason {
-    /// The display EDID does not advertise the required HDR10 capabilities.
-    DisplayUnsupported,
-    /// HDR is disabled in the output configuration.
-    DisabledByConfig,
-    /// The explicitly configured maximum BPC is below HDR's minimum.
-    MaxBpcTooLow,
-    /// The output itself is disabled.
-    OutputDisabled,
-    /// Renderer or KMS setup failed.
-    SetupFailed,
-}
-
-impl std::fmt::Display for HdrReason {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::DisplayUnsupported => "display does not advertise HDR10",
-            Self::DisabledByConfig => "disabled by configuration",
-            Self::MaxBpcTooLow => "explicit max-bpc is below 10",
-            Self::OutputDisabled => "output is disabled",
-            Self::SetupFailed => "renderer or KMS HDR setup failed",
-        })
-    }
 }
 
 /// Toplevel window.

@@ -110,12 +110,6 @@ impl Headless {
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
                 max_bpc: None,
-                hdr_supported: false,
-                hdr_enabled: false,
-                hdr_mode: niri_ipc::HdrMode::Off,
-                hdr_framebuffer_format: None,
-                hdr_reason: None,
-                sdr_reference_luminance: 203,
             },
         );
 

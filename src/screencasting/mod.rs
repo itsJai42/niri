@@ -217,21 +217,11 @@ impl State {
                         pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                         let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                        self.niri.render_pointer(
-                            renderer,
-                            output,
-                            false,
-                            false,
-                            203.0,
-                            &mut |elem| {
-                                let elem = RelocateRenderElement::from_element(
-                                    elem,
-                                    pos,
-                                    Relocate::Relative,
-                                );
-                                elements.push(CastRenderElement::from(elem));
-                            },
-                        );
+                        self.niri.render_pointer(renderer, output, &mut |elem| {
+                            let elem =
+                                RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
+                            elements.push(CastRenderElement::from(elem));
+                        });
                     }
                 }
 
@@ -596,7 +586,7 @@ impl Niri {
                     // happily appear anywhere outside the output video source in OBS.
                     if output_geo.contains(pointer_loc) {
                         pointer_pos = pointer_loc - output_geo.loc;
-                        self.render_pointer(renderer, output, false, false, 203.0, &mut |elem| {
+                        self.render_pointer(renderer, output, &mut |elem| {
                             elements.push(elem.into())
                         });
                     }
@@ -607,12 +597,6 @@ impl Niri {
                     renderer,
                     target: RenderTarget::Screencast,
                     xray: None,
-                    color_managed: true,
-                    tone_map_to_sdr: true,
-                    sdr_reference_luminance: self
-                        .output_state
-                        .get(output)
-                        .map_or(203.0, |state| state.sdr_reference_luminance),
                 };
                 self.render(ctx, output, false, &mut |elem| elements.push(elem.into()));
 
@@ -695,7 +679,7 @@ impl Niri {
                     pointer_location = pointer_pos - output_pos.to_f64() - buf_pos;
 
                     let pos = buf_pos.to_physical_precise_round(scale).upscale(-1);
-                    self.render_pointer(renderer, output, false, false, 203.0, &mut |elem| {
+                    self.render_pointer(renderer, output, &mut |elem| {
                         let elem =
                             RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                         elements.push(CastRenderElement::from(elem));

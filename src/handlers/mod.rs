@@ -13,7 +13,6 @@ use std::time::Duration;
 use smithay::backend::allocator::dmabuf::Dmabuf;
 use smithay::backend::drm::DrmNode;
 use smithay::backend::input::{InputEvent, TabletToolDescriptor};
-use smithay::desktop::utils::surface_primary_scanout_output;
 use smithay::desktop::{PopupKind, PopupManager};
 use smithay::input::dnd::{self, DnDGrab, DndGrabHandler, DndTarget};
 use smithay::input::pointer::{CursorIcon, CursorImageStatus, Focus, PointerHandle};
@@ -77,7 +76,6 @@ pub use crate::handlers::xdg_shell::KdeDecorationsModeState;
 use crate::layout::workspace::WorkspaceId;
 use crate::layout::ActivateWindow;
 use crate::niri::{DndIcon, NewClient, State};
-use crate::protocols::color_management::{ColorManagementHandler, ColorManagementManagerState};
 use crate::protocols::ext_workspace::{self, ExtWorkspaceHandler, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{
     self, ForeignToplevelHandler, ForeignToplevelManagerState,
@@ -769,51 +767,6 @@ impl GammaControlHandler for State {
     }
 }
 delegate_gamma_control!(State);
-
-impl ColorManagementHandler for State {
-    fn color_management_state(&mut self) -> &mut ColorManagementManagerState {
-        &mut self.niri.color_management_state
-    }
-
-    fn image_description_for_output(
-        &mut self,
-        output: &smithay::output::Output,
-    ) -> crate::render_helpers::color::ImageDescription {
-        let Some(state) = self.niri.output_state.get(output) else {
-            return crate::render_helpers::color::ImageDescription::srgb();
-        };
-        if state.hdr_active {
-            let mut description = crate::render_helpers::color::ImageDescription::pq_bt2020();
-            description.reference_white = state.sdr_reference_luminance;
-            description
-        } else {
-            crate::render_helpers::color::ImageDescription::srgb()
-        }
-    }
-
-    fn preferred_image_description(
-        &mut self,
-        surface: &WlSurface,
-    ) -> crate::render_helpers::color::ImageDescription {
-        let output = with_states(surface, |states| {
-            surface_primary_scanout_output(surface, states)
-        });
-        output
-            .as_ref()
-            .map(|output| self.image_description_for_output(output))
-            .unwrap_or_else(crate::render_helpers::color::ImageDescription::srgb)
-    }
-
-    fn defer_info_done(
-        &mut self,
-        info: smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1,
-    ) {
-        self.niri.event_loop.insert_idle(move |_| {
-            info.done();
-        });
-    }
-}
-crate::delegate_color_management!(State);
 
 struct UrgentOnlyMarker;
 

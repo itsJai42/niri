@@ -13,7 +13,6 @@ use smithay::utils::{Buffer, Logical, Physical, Point, Rectangle, Scale, Size, T
 use super::damage::ExtraDamage;
 use super::renderer::{AsGlesFrame as _, NiriRenderer};
 use super::shaders::{mat3_uniform, Shaders};
-use super::surface::SurfaceRenderElement;
 use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 
 #[derive(Debug)]
@@ -23,7 +22,6 @@ pub struct ClippedSurfaceRenderElement<R: NiriRenderer> {
     corner_radius: CornerRadius,
     geometry: Rectangle<f64, Logical>,
     scale: f32,
-    color_uniforms: Option<Vec<Uniform<'static>>>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -34,20 +32,18 @@ pub struct RoundedCornerDamage {
 
 impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
     pub fn new(
-        elem: SurfaceRenderElement<R>,
+        elem: WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
         geometry: Rectangle<f64, Logical>,
         program: GlesTexProgram,
         corner_radius: CornerRadius,
     ) -> Self {
-        let (inner, color_uniforms) = elem.into_wayland_and_color_uniforms();
         Self {
-            inner,
+            inner: elem,
             program,
             corner_radius,
             geometry,
             scale: scale.x as f32,
-            color_uniforms,
         }
     }
 
@@ -95,34 +91,24 @@ impl<R: NiriRenderer> ClippedSurfaceRenderElement<R> {
 
         let geo_size = (self.geometry.size.w as f32, self.geometry.size.h as f32);
 
-        let mut uniforms = vec![
+        vec![
             Uniform::new("niri_scale", self.scale),
             Uniform::new("geo_size", geo_size),
             Uniform::new("corner_radius", <[f32; 4]>::from(self.corner_radius)),
             mat3_uniform("input_to_geo", input_to_geo),
-        ];
-        if let Some(color) = &self.color_uniforms {
-            uniforms.extend(color.iter().cloned());
-        }
-        uniforms
+        ]
     }
 
-    pub fn shader(renderer: &mut R, color_managed: bool) -> Option<&GlesTexProgram> {
-        let shaders = Shaders::get(renderer);
-        if color_managed {
-            shaders.color_clipped_surface.as_ref()
-        } else {
-            shaders.clipped_surface.as_ref()
-        }
+    pub fn shader(renderer: &mut R) -> Option<&GlesTexProgram> {
+        Shaders::get(renderer).clipped_surface.as_ref()
     }
 
     pub fn will_clip(
-        elem: &SurfaceRenderElement<R>,
+        elem: &WaylandSurfaceRenderElement<R>,
         scale: Scale<f64>,
         geometry: Rectangle<f64, Logical>,
         corner_radius: CornerRadius,
     ) -> bool {
-        let elem = elem.wayland();
         let elem_geo = elem.geometry(scale);
         let geo = geometry.to_physical_precise_round(scale);
 

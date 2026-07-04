@@ -57,9 +57,6 @@ impl TestCase for Window {
             renderer,
             target: RenderTarget::Output,
             xray: None,
-            color_managed: false,
-            tone_map_to_sdr: false,
-            sdr_reference_luminance: 203.0,
         };
         self.window
             .render_normal(ctx, location, Scale::from(1.), 1., &mut |elem| {

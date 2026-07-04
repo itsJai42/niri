@@ -14,10 +14,7 @@ pub struct Shaders {
     pub border: Option<ShaderProgram>,
     pub shadow: Option<ShaderProgram>,
     pub clipped_surface: Option<GlesTexProgram>,
-    pub color_clipped_surface: Option<GlesTexProgram>,
     pub postprocess_and_clip: Option<GlesTexProgram>,
-    pub color_transform: Option<GlesTexProgram>,
-    pub hdr_output: Option<GlesTexProgram>,
     pub resize: Option<ShaderProgram>,
     pub gradient_fade: Option<GlesTexProgram>,
     pub blur: Option<BlurProgram>,
@@ -129,52 +126,6 @@ impl Shaders {
             })
             .ok();
 
-        let color_clipped_surface = renderer
-            .compile_custom_texture_shader(
-                concat!(
-                    include_str!("clipped_surface.frag"),
-                    include_str!("rounding_alpha.frag"),
-                    include_str!("color_postprocess.frag"),
-                ),
-                &[
-                    UniformName::new("niri_scale", UniformType::_1f),
-                    UniformName::new("geo_size", UniformType::_2f),
-                    UniformName::new("corner_radius", UniformType::_4f),
-                    UniformName::new("input_to_geo", UniformType::Matrix3x3),
-                    UniformName::new("source_tf", UniformType::_1f),
-                    UniformName::new("luminance_scale", UniformType::_1f),
-                    UniformName::new("gamut_matrix", UniformType::Matrix3x3),
-                    UniformName::new("output_sdr", UniformType::_1f),
-                ],
-            )
-            .map_err(|err| warn!("error compiling color clipped surface shader: {err:?}"))
-            .ok();
-
-        let color_transform = renderer
-            .compile_custom_texture_shader(
-                include_str!("color_transform.frag"),
-                &[
-                    UniformName::new("source_tf", UniformType::_1f),
-                    UniformName::new("luminance_scale", UniformType::_1f),
-                    UniformName::new("gamut_matrix", UniformType::Matrix3x3),
-                    UniformName::new("output_sdr", UniformType::_1f),
-                ],
-            )
-            .map_err(|err| warn!("error compiling color transform shader: {err:?}"))
-            .ok();
-
-        let hdr_output = renderer
-            .compile_custom_texture_shader(
-                include_str!("hdr_output.frag"),
-                &[
-                    UniformName::new("sdr_reference_luminance", UniformType::_1f),
-                    UniformName::new("target_peak_luminance", UniformType::_1f),
-                    UniformName::new("gamut_matrix", UniformType::Matrix3x3),
-                ],
-            )
-            .map_err(|err| warn!("error compiling HDR output shader: {err:?}"))
-            .ok();
-
         let resize = compile_resize_program(renderer, include_str!("resize.frag"))
             .map_err(|err| {
                 warn!("error compiling resize shader: {err:?}");
@@ -201,10 +152,7 @@ impl Shaders {
             border,
             shadow,
             clipped_surface,
-            color_clipped_surface,
             postprocess_and_clip,
-            color_transform,
-            hdr_output,
             resize,
             gradient_fade,
             blur,

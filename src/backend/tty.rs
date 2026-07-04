@@ -11,7 +11,7 @@ use std::time::Duration;
 use std::{io, mem};
 
 use anyhow::{anyhow, bail, ensure, Context};
-use bytemuck::{bytes_of_mut, cast_slice_mut, Pod, Zeroable};
+use bytemuck::cast_slice_mut;
 use drm_ffi::drm_mode_modeinfo;
 use libc::dev_t;
 use niri_config::output::{MaxBpc, Modeline};
@@ -29,12 +29,10 @@ use smithay::backend::drm::{
 use smithay::backend::egl::context::ContextPriority;
 use smithay::backend::egl::{EGLDevice, EGLDisplay};
 use smithay::backend::libinput::{LibinputInputBackend, LibinputSessionInterface};
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::multigpu::gbm::GbmGlesBackend;
 use smithay::backend::renderer::multigpu::{GpuManager, MultiFrame, MultiRenderer};
-use smithay::backend::renderer::{
-    DebugFlags, ImportDma, ImportEgl, Offscreen, Renderer, RendererSuper,
-};
+use smithay::backend::renderer::{DebugFlags, ImportDma, ImportEgl, RendererSuper};
 use smithay::backend::session::libseat::LibSeatSession;
 use smithay::backend::session::{Event as SessionEvent, Session};
 use smithay::backend::udev::{self, UdevBackend, UdevEvent};
@@ -68,11 +66,8 @@ use crate::backend::OutputId;
 use crate::frame_clock::FrameClock;
 use crate::niri::{Niri, RedrawState, State};
 use crate::render_helpers::debug::draw_damage;
-use crate::render_helpers::hdr_output::HdrOutputRenderElement;
 use crate::render_helpers::renderer::AsGlesRenderer;
-use crate::render_helpers::{
-    render_output_to_texture, resources, shaders, RenderCtx, RenderTarget,
-};
+use crate::render_helpers::{resources, shaders, RenderCtx, RenderTarget};
 use crate::utils::{get_monotonic_time, is_laptop_panel, logical_output, PanelOrientation};
 
 const SUPPORTED_COLOR_FORMATS: [Fourcc; 8] = [
@@ -374,14 +369,9 @@ impl OutputDevice {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct TtyOutputState {
-    pub(crate) node: DrmNode,
-    pub(crate) crtc: crtc::Handle,
-    pub(crate) hdr_supported: bool,
-    pub(crate) hdr_requested: bool,
-    pub(crate) hdr_active: bool,
-    pub(crate) hdr_max_luminance: f64,
-    pub(crate) sdr_reference_luminance: f64,
+struct TtyOutputState {
+    node: DrmNode,
+    crtc: crtc::Handle,
 }
 
 struct Surface {
@@ -392,9 +382,6 @@ struct Surface {
     gamma_props: Option<GammaProps>,
     /// Gamma change to apply upon session resume.
     pending_gamma_change: Option<Option<Vec<u16>>>,
-    hdr_available: bool,
-    hdr_active: bool,
-    hdr_max_luminance: f64,
     /// Tracy frame that goes from vblank to vblank.
     vblank_frame: Option<tracy_client::Frame>,
     /// Frame name for the VBlank frame.
@@ -424,7 +411,6 @@ struct ConnectorProperties<'a> {
     properties: Vec<(property::Info, property::RawValue)>,
     has_change: bool,
     requests: AtomicModeReq,
-    created_blobs: Vec<u64>,
 }
 
 impl Tty {
@@ -617,19 +603,6 @@ impl Tty {
                 self.libinput.suspend();
 
                 for device in self.devices.values_mut() {
-                    for surface in device.surfaces.values() {
-                        if let Ok(mut props) =
-                            ConnectorProperties::try_new(&device.drm, surface.connector)
-                        {
-                            let max_bpc = self
-                                .config
-                                .borrow()
-                                .outputs
-                                .find(&surface.name)
-                                .and_then(|output| output.max_bpc);
-                            let _ = set_connector_properties(&mut props, max_bpc, None);
-                        }
-                    }
                     device.drm.pause();
 
                     if let Some(lease_state) = &mut device.drm_lease_state {
@@ -718,37 +691,12 @@ impl Tty {
                                 .outputs
                                 .find(&surface.name)
                                 .and_then(|o| o.max_bpc);
-                            let max_bpc = if surface.hdr_active && max_bpc.is_none() {
-                                Some(MaxBpc(niri_ipc::MaxBpc::try_from(10).unwrap()))
-                            } else {
-                                max_bpc
-                            };
-                            let hdr = surface.hdr_active.then_some(surface.hdr_max_luminance);
-                            surface.hdr_active = set_connector_properties(&mut props, max_bpc, hdr);
+                            set_connector_properties(&mut props, max_bpc, true);
                         } else {
                             warn!("failed to get connector properties");
                         }
 
-                        if let Some(output) = niri.global_space.outputs().find(|output| {
-                            let state: &TtyOutputState = output.user_data().get().unwrap();
-                            state.node == node && state.crtc == *crtc
-                        }) {
-                            if let Some(state) = niri.output_state.get_mut(output) {
-                                state.hdr_active = surface.hdr_active;
-                            }
-                        }
-
-                        if surface.hdr_active {
-                            surface.pending_gamma_change = None;
-                            let result = if let Some(gamma_props) = &mut surface.gamma_props {
-                                gamma_props.set_gamma(&device.drm, None)
-                            } else {
-                                set_gamma_for_crtc(&device.drm, *crtc, None)
-                            };
-                            if let Err(err) = result {
-                                warn!("error resetting gamma for HDR output: {err:?}");
-                            }
-                        } else if let Some(ramp) = surface.pending_gamma_change.take() {
+                        if let Some(ramp) = surface.pending_gamma_change.take() {
                             let ramp = ramp.as_deref();
                             let res = if let Some(gamma_props) = &mut surface.gamma_props {
                                 gamma_props.set_gamma(&device.drm, ramp)
@@ -1327,18 +1275,6 @@ impl Tty {
             .cloned()
             .unwrap_or_default();
 
-        let hdr_capability = get_hdr_capability(&device.drm, connector.handle()).ok();
-        let hdr_supported = hdr_capability.is_some_and(|cap| cap.supports_hdr10());
-        let hdr_requested = config.hdr != niri_config::output::HdrMode::Off;
-        let hdr_max_luminance = hdr_capability
-            .and_then(|cap| cap.max_luminance)
-            .map(f64::from)
-            .unwrap_or(1000.0);
-        let sdr_reference_luminance = config
-            .sdr_reference_luminance
-            .map(|value| value.0)
-            .unwrap_or(crate::render_helpers::color::SDR_REFERENCE_WHITE);
-
         for m in connector.modes() {
             trace!("{m:?}");
         }
@@ -1376,12 +1312,7 @@ impl Tty {
 
         let mut orientation = None;
         if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
-            let max_bpc = if hdr_requested && hdr_supported && config.max_bpc.is_none() {
-                Some(MaxBpc(niri_ipc::MaxBpc::try_from(10).unwrap()))
-            } else {
-                config.max_bpc
-            };
-            let _ = set_connector_properties(&mut props, max_bpc, None);
+            set_connector_properties(&mut props, config.max_bpc, true);
 
             match props.get_panel_orientation() {
                 Ok(x) => orientation = Some(x),
@@ -1458,50 +1389,16 @@ impl Tty {
         output.change_current_state(Some(wl_mode), None, None, None);
         output.set_preferred(wl_mode);
 
+        output
+            .user_data()
+            .insert_if_missing(|| TtyOutputState { node, crtc });
         output.user_data().insert_if_missing(|| output_name.clone());
         if let Some(x) = orientation {
             output.user_data().insert_if_missing(|| PanelOrientation(x));
         }
 
         let render_node = device.render_node.unwrap_or(self.primary_render_node);
-        let mut renderer = self.gpu_manager.single_renderer(&render_node)?;
-        let fp16_supported = <GlesRenderer as Offscreen<GlesTexture>>::create_buffer(
-            renderer.as_gles_renderer(),
-            Fourcc::Abgr16161616f,
-            (1, 1).into(),
-        )
-        .is_ok();
-        let hdr_shaders_supported = {
-            let shaders = shaders::Shaders::get(renderer.as_gles_renderer());
-            shaders.color_transform.is_some() && shaders.hdr_output.is_some()
-        };
-        let hdr_bpc_compatible = config.max_bpc.is_none_or(|max_bpc| max_bpc.0 as u8 >= 10);
-        let mut hdr_available = hdr_supported && fp16_supported && hdr_shaders_supported;
-        let mut hdr_active = hdr_requested && hdr_available && hdr_bpc_compatible;
-        if config.hdr == niri_config::output::HdrMode::On && !hdr_supported {
-            warn!("output {connector_name}: requested HDR is unavailable because the display does not advertise HDR10");
-        }
-        if config.hdr == niri_config::output::HdrMode::On && hdr_supported && !fp16_supported {
-            warn!("output {connector_name}: disabling HDR because FP16 composition is unavailable");
-        }
-        if config.hdr == niri_config::output::HdrMode::On && !hdr_shaders_supported {
-            warn!("output {connector_name}: disabling HDR because required color shaders are unavailable");
-        }
-        if config.hdr == niri_config::output::HdrMode::On && !hdr_bpc_compatible {
-            warn!("output {connector_name}: disabling HDR because explicit max-bpc is below 10");
-        }
-        if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
-            let max_bpc = if hdr_active && config.max_bpc.is_none() {
-                Some(MaxBpc(niri_ipc::MaxBpc::try_from(10).unwrap()))
-            } else {
-                config.max_bpc
-            };
-            hdr_active = set_connector_properties(
-                &mut props,
-                max_bpc,
-                hdr_active.then_some(hdr_max_luminance),
-            );
-        }
+        let renderer = self.gpu_manager.single_renderer(&render_node)?;
         let egl_context = renderer.as_ref().egl_context();
         let render_formats = egl_context.dmabuf_render_formats();
 
@@ -1593,28 +1490,6 @@ impl Tty {
             compositor.set_debug_flags(DebugFlags::TINT);
         }
 
-        let ten_bit_scanout = matches!(
-            compositor.format(),
-            Fourcc::Xrgb2101010 | Fourcc::Xbgr2101010 | Fourcc::Argb2101010 | Fourcc::Abgr2101010
-        );
-        hdr_available &= ten_bit_scanout;
-        if hdr_active && !ten_bit_scanout {
-            warn!("output {connector_name}: disabling HDR because 10-bit scanout is unavailable");
-            hdr_active = false;
-            if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, connector.handle()) {
-                let _ = set_connector_properties(&mut props, config.max_bpc, None);
-            }
-        }
-        output.user_data().insert_if_missing(|| TtyOutputState {
-            node,
-            crtc,
-            hdr_supported,
-            hdr_requested,
-            hdr_active,
-            hdr_max_luminance,
-            sdr_reference_luminance,
-        });
-
         let mut dmabuf_feedback = None;
         if let Ok(primary_renderer) = self.gpu_manager.single_renderer(&self.primary_render_node) {
             let primary_formats = primary_renderer.dmabuf_formats();
@@ -1663,9 +1538,6 @@ impl Tty {
             dmabuf_feedback,
             gamma_props,
             pending_gamma_change: None,
-            hdr_available,
-            hdr_active,
-            hdr_max_luminance,
             vblank_frame: None,
             vblank_frame_name,
             time_since_presentation_plot_name,
@@ -1722,10 +1594,6 @@ impl Tty {
         };
 
         debug!("disconnecting connector: {:?}", surface.name.connector);
-
-        if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, surface.connector) {
-            let _ = set_connector_properties(&mut props, None, None);
-        }
 
         let output = niri
             .global_space
@@ -2024,15 +1892,6 @@ impl Tty {
             renderer: &mut renderer,
             target: RenderTarget::Output,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: !niri
-                .output_state
-                .get(output)
-                .is_some_and(|state| state.hdr_active),
-            sdr_reference_luminance: niri
-                .output_state
-                .get(output)
-                .map_or(203.0, |state| state.sdr_reference_luminance),
         };
         let mut elements = niri.render_to_vec(ctx, output, true);
 
@@ -2040,84 +1899,6 @@ impl Tty {
         if niri.debug_draw_damage {
             let output_state = niri.output_state.get_mut(output).unwrap();
             draw_damage(&mut output_state.debug_damage_tracker, &mut elements);
-        }
-
-        let hdr_state = niri.output_state.get(output).map(|state| {
-            (
-                state.hdr_active,
-                state.sdr_reference_luminance,
-                state.hdr_max_luminance,
-            )
-        });
-        let mut composition_states = None;
-        if let Some((true, sdr_reference, peak)) = hdr_state {
-            let hdr = {
-                let state = niri.output_state.get_mut(output).unwrap();
-                render_output_to_texture(
-                    &mut renderer,
-                    output,
-                    Fourcc::Abgr16161616f,
-                    &elements,
-                    &mut state.hdr_texture,
-                    &mut state.hdr_damage_tracker,
-                )
-                .map(|(texture, sync, states, damage)| {
-                    if damage.is_some() {
-                        state.hdr_output_commit.increment();
-                    }
-                    (
-                        texture,
-                        sync,
-                        states,
-                        damage.unwrap_or_default(),
-                        state.hdr_output_id.clone(),
-                        state.hdr_output_commit,
-                    )
-                })
-            }
-            .and_then(|(texture, sync, states, damage, id, commit)| {
-                renderer
-                    .wait(&sync)
-                    .context("error synchronizing HDR composition")?;
-                let size = output.current_mode().context("output has no mode")?.size;
-                let size = output.current_transform().transform_size(size);
-                let elem = HdrOutputRenderElement::new(
-                    renderer.as_gles_renderer(),
-                    texture,
-                    size,
-                    output.current_scale().fractional_scale(),
-                    sdr_reference,
-                    peak,
-                    id,
-                    commit,
-                    damage,
-                )
-                .context("HDR output shader is unavailable")?;
-                Ok((elem, states))
-            });
-            match hdr {
-                Ok((elem, states)) => {
-                    elements.clear();
-                    elements.push(elem.into());
-                    composition_states = Some(states);
-                }
-                Err(err) => {
-                    warn!("disabling HDR after composition failure: {err:?}");
-                    niri.output_state.get_mut(output).unwrap().hdr_active = false;
-                    surface.hdr_active = false;
-                    if let Ok(mut props) =
-                        ConnectorProperties::try_new(&device.drm, surface.connector)
-                    {
-                        let max_bpc = self
-                            .config
-                            .borrow()
-                            .outputs
-                            .find(&surface.name)
-                            .and_then(|config| config.max_bpc);
-                        let _ = set_connector_properties(&mut props, max_bpc, None);
-                    }
-                }
-            }
         }
 
         // Overlay planes are disabled by default as they cause weird performance issues on my
@@ -2149,10 +1930,6 @@ impl Tty {
                 }
             }
 
-            if composition_states.is_some() {
-                flags = FrameFlags::empty();
-            }
-
             flags
         };
 
@@ -2160,7 +1937,6 @@ impl Tty {
         let drm_compositor = &mut surface.compositor;
         match drm_compositor.render_frame::<_, _>(&mut renderer, &elements, [0.; 4], flags) {
             Ok(res) => {
-                let states = composition_states.as_ref().unwrap_or(&res.states);
                 let needs_sync = res.needs_sync()
                     || self
                         .config
@@ -2176,13 +1952,14 @@ impl Tty {
                     }
                 }
 
-                niri.update_primary_scanout_output(output, states);
+                niri.update_primary_scanout_output(output, &res.states);
                 if let Some(dmabuf_feedback) = surface.dmabuf_feedback.as_ref() {
-                    niri.send_dmabuf_feedbacks(output, dmabuf_feedback, states);
+                    niri.send_dmabuf_feedbacks(output, dmabuf_feedback, &res.states);
                 }
 
                 if !res.is_empty {
-                    let presentation_feedbacks = niri.take_presentation_feedbacks(output, states);
+                    let presentation_feedbacks =
+                        niri.take_presentation_feedbacks(output, &res.states);
                     let data = (presentation_feedbacks, target_presentation_time);
 
                     match drm_compositor.queue_frame(data) {
@@ -2321,11 +2098,6 @@ impl Tty {
             .context("missing device")?;
         let surface = device.surfaces.get_mut(&crtc).context("missing surface")?;
 
-        ensure!(
-            !surface.hdr_active || ramp.is_none(),
-            "gamma ramps are unavailable while HDR is active"
-        );
-
         // Cannot change properties while the device is inactive.
         if !self.session.is_active() {
             surface.pending_gamma_change = Some(ramp);
@@ -2413,11 +2185,14 @@ impl Tty {
                     });
                 let vrr_enabled = surface.is_some_and(|surface| surface.compositor.vrr_enabled());
 
-                let niri_output = niri.global_space.outputs().find(|output| {
-                    let tty_state: &TtyOutputState = output.user_data().get().unwrap();
-                    tty_state.node == *node && tty_state.crtc == crtc
-                });
-                let logical = niri_output.map(logical_output);
+                let logical = niri
+                    .global_space
+                    .outputs()
+                    .find(|output| {
+                        let tty_state: &TtyOutputState = output.user_data().get().unwrap();
+                        tty_state.node == *node && tty_state.crtc == crtc
+                    })
+                    .map(logical_output);
 
                 let id = device.known_crtcs.get(&crtc).map(|info| info.id);
                 let id = id.unwrap_or_else(|| {
@@ -2434,44 +2209,6 @@ impl Tty {
                         .map(|v| v as u8)
                 });
 
-                let hdr_supported = get_hdr_capability(&device.drm, connector.handle())
-                    .is_ok_and(|capability| capability.supports_hdr10());
-                let hdr_enabled = surface.is_some_and(|surface| surface.hdr_active);
-                let config = self
-                    .config
-                    .borrow()
-                    .outputs
-                    .find(&output_name)
-                    .cloned()
-                    .unwrap_or_default();
-                let hdr_requested = config.hdr != niri_config::output::HdrMode::Off;
-                let hdr_mode = match config.hdr {
-                    niri_config::output::HdrMode::Off => niri_ipc::HdrMode::Off,
-                    niri_config::output::HdrMode::On => niri_ipc::HdrMode::On,
-                    niri_config::output::HdrMode::Auto => niri_ipc::HdrMode::Auto,
-                };
-                let hdr_reason = if hdr_enabled {
-                    None
-                } else if !hdr_supported {
-                    Some(niri_ipc::HdrReason::DisplayUnsupported)
-                } else if !hdr_requested {
-                    Some(niri_ipc::HdrReason::DisabledByConfig)
-                } else if config.max_bpc.is_some_and(|max_bpc| (max_bpc.0 as u8) < 10) {
-                    Some(niri_ipc::HdrReason::MaxBpcTooLow)
-                } else if surface.is_none() {
-                    Some(niri_ipc::HdrReason::OutputDisabled)
-                } else {
-                    Some(niri_ipc::HdrReason::SetupFailed)
-                };
-                let sdr_reference_luminance = niri_output
-                    .and_then(|output| niri.output_state.get(output))
-                    .map(|state| state.sdr_reference_luminance)
-                    .or_else(|| config.sdr_reference_luminance.map(|value| value.0))
-                    .unwrap_or(crate::render_helpers::color::SDR_REFERENCE_WHITE)
-                    .round()
-                    .clamp(1.0, u16::MAX as f64)
-                    as u16;
-
                 let ipc_output = niri_ipc::Output {
                     name: connector_name,
                     make: output_name.make.unwrap_or_else(|| "Unknown".into()),
@@ -2485,20 +2222,6 @@ impl Tty {
                     vrr_enabled,
                     logical,
                     max_bpc,
-                    hdr_supported,
-                    hdr_enabled,
-                    hdr_mode,
-                    hdr_framebuffer_format: hdr_enabled.then(|| {
-                        match surface.unwrap().compositor.format() {
-                            Fourcc::Xrgb2101010 => niri_ipc::HdrFramebufferFormat::Xrgb2101010,
-                            Fourcc::Xbgr2101010 => niri_ipc::HdrFramebufferFormat::Xbgr2101010,
-                            Fourcc::Argb2101010 => niri_ipc::HdrFramebufferFormat::Argb2101010,
-                            Fourcc::Abgr2101010 => niri_ipc::HdrFramebufferFormat::Abgr2101010,
-                            format => unreachable!("unexpected HDR scanout format: {format:?}"),
-                        }
-                    }),
-                    hdr_reason,
-                    sdr_reference_luminance,
                 };
 
                 ipc_outputs.insert(id, ipc_output);
@@ -2715,6 +2438,23 @@ impl Tty {
                     },
                 };
 
+                if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, surface.connector)
+                {
+                    set_connector_properties(&mut props, config.max_bpc, false);
+                } else {
+                    warn!("failed to get connector properties");
+                }
+
+                let change_mode = surface.compositor.pending_mode() != mode;
+
+                let vrr_enabled = surface.compositor.vrr_enabled();
+                let change_always_vrr = vrr_enabled != config.is_vrr_always_on();
+                let is_on_demand_vrr = config.is_vrr_on_demand();
+
+                if !change_mode && !change_always_vrr && !is_on_demand_vrr {
+                    continue;
+                }
+
                 let output = niri
                     .global_space
                     .outputs()
@@ -2731,65 +2471,6 @@ impl Tty {
                     error!("missing state for output {:?}", surface.name.connector);
                     continue;
                 };
-                let old_color_state = (
-                    output_state.hdr_active,
-                    output_state.sdr_reference_luminance,
-                );
-
-                let hdr_requested = config.hdr != niri_config::output::HdrMode::Off;
-                let hdr_bpc_compatible = config.max_bpc.is_none_or(|max_bpc| max_bpc.0 as u8 >= 10);
-                let hdr_desired = hdr_requested && surface.hdr_available && hdr_bpc_compatible;
-                let max_bpc = if hdr_desired && config.max_bpc.is_none() {
-                    Some(MaxBpc(niri_ipc::MaxBpc::try_from(10).unwrap()))
-                } else {
-                    config.max_bpc
-                };
-
-                let was_hdr_active = surface.hdr_active;
-                if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, surface.connector)
-                {
-                    surface.hdr_active = set_connector_properties(
-                        &mut props,
-                        max_bpc,
-                        hdr_desired.then_some(surface.hdr_max_luminance),
-                    );
-                } else {
-                    warn!("failed to get connector properties");
-                    surface.hdr_active = false;
-                }
-                surface.hdr_active &= hdr_desired;
-                output_state.hdr_requested = hdr_requested;
-                output_state.hdr_active = surface.hdr_active;
-                output_state.sdr_reference_luminance = config
-                    .sdr_reference_luminance
-                    .map(|value| value.0)
-                    .unwrap_or(crate::render_helpers::color::SDR_REFERENCE_WHITE);
-                output_state.hdr_max_luminance = surface.hdr_max_luminance;
-                let color_state_changed = old_color_state
-                    != (
-                        output_state.hdr_active,
-                        output_state.sdr_reference_luminance,
-                    );
-                if surface.hdr_active && !was_hdr_active {
-                    surface.pending_gamma_change = None;
-                    let result = if let Some(gamma_props) = &mut surface.gamma_props {
-                        gamma_props.set_gamma(&device.drm, None)
-                    } else {
-                        set_gamma_for_crtc(&device.drm, crtc, None)
-                    };
-                    if let Err(err) = result {
-                        warn!("error resetting gamma for HDR output: {err:?}");
-                    }
-                }
-                let change_mode = surface.compositor.pending_mode() != mode;
-
-                let vrr_enabled = surface.compositor.vrr_enabled();
-                let change_always_vrr = vrr_enabled != config.is_vrr_always_on();
-                let is_on_demand_vrr = config.is_vrr_on_demand();
-
-                if !change_mode && !change_always_vrr && !is_on_demand_vrr && !color_state_changed {
-                    continue;
-                }
 
                 if (is_on_demand_vrr && vrr_enabled != output_state.on_demand_vrr_enabled)
                     || (!is_on_demand_vrr && change_always_vrr)
@@ -2841,9 +2522,6 @@ impl Tty {
                         surface.compositor.vrr_enabled(),
                     );
                     niri.output_resized(&output);
-                }
-                if color_state_changed {
-                    niri.queue_redraw(&output);
                 }
             }
 
@@ -2926,22 +2604,6 @@ impl Tty {
         }
 
         None
-    }
-}
-
-impl Drop for Tty {
-    fn drop(&mut self) {
-        for device in self.devices.values() {
-            if !device.drm.is_active() {
-                continue;
-            }
-            for surface in device.surfaces.values() {
-                if let Ok(mut props) = ConnectorProperties::try_new(&device.drm, surface.connector)
-                {
-                    let _ = set_connector_properties(&mut props, None, None);
-                }
-            }
-        }
     }
 }
 
@@ -3591,64 +3253,6 @@ fn get_edid_info(
     libdisplay_info::info::Info::parse_edid(&data).context("error parsing EDID")
 }
 
-/// Per-connector HDR capability derived from EDID, for use by output policy
-/// and the forced-HDR KMS path.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct HdrCapability {
-    /// Display supports the PQ (ST 2084) transfer function.
-    pub pq: bool,
-    /// Display supports BT.2020 RGB signal colorimetry.
-    pub bt2020_rgb: bool,
-    /// Display supports HDR static metadata type 1.
-    pub static_metadata_type1: bool,
-    /// Desired content max luminance in cd/m^2, if reported.
-    pub max_luminance: Option<f32>,
-    /// Desired content min luminance in cd/m^2, if reported.
-    pub min_luminance: Option<f32>,
-    /// Display's reported bits per color, if known.
-    pub bpc: Option<i32>,
-}
-
-impl HdrCapability {
-    /// Whether the display supports at least 10 bits per color.
-    pub fn has_10_bpc(&self) -> bool {
-        self.bpc.is_some_and(|bpc| bpc >= 10)
-    }
-
-    pub fn supports_hdr10(&self) -> bool {
-        self.pq && self.bt2020_rgb && self.static_metadata_type1 && self.has_10_bpc()
-    }
-}
-
-fn hdr_capability_from_info(info: &libdisplay_info::info::Info) -> HdrCapability {
-    let metadata = info.hdr_static_metadata();
-    let colorimetry = info.supported_signal_colorimetry();
-    let bpc = info
-        .edid()
-        .and_then(|edid| edid.video_input_digital())
-        .and_then(|video| video.color_bit_depth);
-
-    // ponytail: crate uses 0.0 as "absent" sentinel for luminance fields (matches its own doc).
-    let non_zero = |v: f32| (v != 0.0).then_some(v);
-
-    HdrCapability {
-        pq: metadata.pq,
-        bt2020_rgb: colorimetry.bt2020_rgb,
-        static_metadata_type1: metadata.type1,
-        max_luminance: non_zero(metadata.desired_content_max_luminance),
-        min_luminance: non_zero(metadata.desired_content_min_luminance),
-        bpc,
-    }
-}
-
-pub fn get_hdr_capability(
-    device: &DrmDevice,
-    connector: connector::Handle,
-) -> anyhow::Result<HdrCapability> {
-    let info = get_edid_info(device, connector)?;
-    Ok(hdr_capability_from_info(&info))
-}
-
 impl<'a> ConnectorProperties<'a> {
     fn try_new(device: &'a DrmDevice, connector: connector::Handle) -> anyhow::Result<Self> {
         let prop_vals = device
@@ -3671,7 +3275,6 @@ impl<'a> ConnectorProperties<'a> {
             properties,
             has_change: false,
             requests: AtomicModeReq::new(),
-            created_blobs: Vec::new(),
         })
     }
 
@@ -3733,47 +3336,6 @@ impl<'a> ConnectorProperties<'a> {
         Ok(())
     }
 
-    fn set_hdr(&mut self, max_luminance: f64) -> anyhow::Result<()> {
-        let metadata_property = {
-            let (info, _) = self.find(c"HDR_OUTPUT_METADATA")?;
-            ensure!(
-                matches!(info.value_type(), property::ValueType::Blob),
-                "HDR_OUTPUT_METADATA has wrong property type"
-            );
-            info.handle()
-        };
-
-        let (colorspace_property, bt2020) = {
-            let (info, _) = self.find(c"Colorspace")?;
-            let property::ValueType::Enum(values) = info.value_type() else {
-                bail!("Colorspace has wrong property type")
-            };
-            let (_, enums) = values.values();
-            let bt2020 = enums
-                .iter()
-                .find(|value| value.name().to_bytes() == b"BT2020_RGB")
-                .context("BT2020_RGB connector colorspace is unavailable")?
-                .value();
-            (info.handle(), bt2020)
-        };
-
-        let mut metadata = HdrOutputMetadata::hdr10(max_luminance);
-        let blob =
-            drm_ffi::mode::create_property_blob(self.device.as_fd(), bytes_of_mut(&mut metadata))
-                .context("error creating HDR_OUTPUT_METADATA blob")?;
-        let blob = u64::from(blob.blob_id);
-        self.created_blobs.push(blob);
-        self.requests.add_raw_property(
-            self.connector.into(),
-            metadata_property,
-            property::Value::Blob(blob).into(),
-        );
-        self.requests
-            .add_raw_property(self.connector.into(), colorspace_property, bt2020);
-        self.has_change = true;
-        Ok(())
-    }
-
     fn set_max_bpc(&mut self, max_bpc: MaxBpc) -> anyhow::Result<u64> {
         let (info, value) = self.find(c"max bpc")?;
 
@@ -3803,107 +3365,37 @@ impl<'a> ConnectorProperties<'a> {
     }
 
     fn commit(&mut self) -> anyhow::Result<()> {
-        let result = if self.has_change {
-            self.device
-                .atomic_commit(
-                    AtomicCommitFlags::ALLOW_MODESET,
-                    std::mem::take(&mut self.requests),
-                )
-                .context("atomic connector property commit failed")
-        } else {
-            Ok(())
-        };
-        for blob in self.created_blobs.drain(..) {
-            if let Err(err) = self.device.destroy_property_blob(blob) {
-                warn!("error destroying HDR metadata blob: {err:?}");
-            }
+        if self.has_change {
+            self.device.atomic_commit(
+                AtomicCommitFlags::ALLOW_MODESET,
+                std::mem::take(&mut self.requests),
+            )?;
         }
-        result
-    }
-}
 
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct HdrMetadataInfoframe {
-    eotf: u8,
-    metadata_type: u8,
-    display_primaries: [[u16; 2]; 3],
-    white_point: [u16; 2],
-    max_display_mastering_luminance: u16,
-    min_display_mastering_luminance: u16,
-    max_cll: u16,
-    max_fall: u16,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Pod, Zeroable)]
-struct HdrOutputMetadata {
-    metadata_type: u32,
-    hdmi_metadata_type1: HdrMetadataInfoframe,
-    padding: [u8; 2],
-}
-
-impl HdrOutputMetadata {
-    fn hdr10(max_luminance: f64) -> Self {
-        let peak = max_luminance.clamp(1.0, u16::MAX as f64).round() as u16;
-        Self {
-            metadata_type: 0,
-            hdmi_metadata_type1: HdrMetadataInfoframe {
-                eotf: 2, // CTA-861-G: SMPTE ST 2084 (PQ).
-                metadata_type: 0,
-                display_primaries: [[35400, 14600], [8500, 39850], [6550, 2300]],
-                white_point: [15635, 16450],
-                max_display_mastering_luminance: peak,
-                min_display_mastering_luminance: 1,
-                max_cll: peak,
-                max_fall: (u32::from(peak) * 2 / 5) as u16,
-            },
-            padding: [0; 2],
-        }
+        Ok(())
     }
 }
 
 fn set_connector_properties(
     props: &mut ConnectorProperties,
     max_bpc: Option<MaxBpc>,
-    hdr: Option<f64>,
-) -> bool {
-    let max_bpc_configured = max_bpc.is_none_or(|max_bpc| {
-        if props.find(c"max bpc").is_err() {
-            debug!("connector does not expose `max bpc`; relying on driver-managed link depth");
-            return true;
+    reset_hdr: bool,
+) {
+    if let Some(max_bpc) = max_bpc {
+        if let Err(err) = props.set_max_bpc(max_bpc) {
+            debug!("failed to set `max bpc` property: {err}");
         }
+    }
 
-        props
-            .set_max_bpc(max_bpc)
-            .map(|_| true)
-            .unwrap_or_else(|err| {
-                debug!("failed to set `max bpc` property: {err}");
-                false
-            })
-    });
-
-    let hdr_configured = if let Some(max_luminance) = hdr.filter(|_| max_bpc_configured) {
-        match props.set_hdr(max_luminance) {
-            Ok(()) => true,
-            Err(err) => {
-                warn!("failed to configure HDR properties: {err}");
-                let _ = props.reset_hdr();
-                false
-            }
-        }
-    } else {
+    if reset_hdr {
         if let Err(err) = props.reset_hdr() {
-            debug!("failed to reset HDR properties: {err}");
+            debug!("failed to set HDR properties: {err}");
         }
-        false
-    };
+    }
 
     if let Err(err) = props.commit() {
         warn!("failed to atomically commit properties: {err}");
-        return false;
     }
-    hdr_configured
 }
 
 fn is_vrr_capable(device: &DrmDevice, connector: connector::Handle) -> Option<bool> {
@@ -4030,90 +3522,7 @@ mod tests {
     use niri_config::output::Modeline;
     use niri_ipc::{HSyncPolarity, VSyncPolarity};
 
-    use crate::backend::tty::{
-        calculate_drm_mode_from_modeline, calculate_mode_cvt, hdr_capability_from_info,
-        HdrOutputMetadata,
-    };
-
-    // ponytail: no fixture EDID exists anywhere in libdisplay-info or the system, so these
-    // are hand-built (base block + CTA-861 extension) and validated with `di-edid-decode`.
-    // HDR-capable: PQ + type1 static metadata + BT2020 RGB colorimetry + 10 bpc.
-    const HDR_CAPABLE_EDID: [u8; 256] = [
-        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x04, 0x69, 0x01, 0x00, 0x01, 0x00, 0x00,
-        0x00, 0x01, 0x1E, 0x01, 0x04, 0xB5, 0x3C, 0x22, 0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x97, 0x02, 0x03, 0x0F, 0x00, 0xE6, 0x06, 0x05,
-        0x01, 0x1E, 0x0A, 0x01, 0xE3, 0x05, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x69,
-    ];
-
-    // No CTA extension, undefined bit depth: expect all HDR fields false/None.
-    const SDR_ONLY_EDID: [u8; 128] = [
-        0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x04, 0x69, 0x01, 0x00, 0x02, 0x00, 0x00,
-        0x00, 0x01, 0x1E, 0x01, 0x04, 0x85, 0x3C, 0x22, 0x78, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,
-        0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xC7,
-    ];
-
-    #[test]
-    fn test_hdr_capability_from_hdr_edid() {
-        let info = libdisplay_info::info::Info::parse_edid(&HDR_CAPABLE_EDID).unwrap();
-        let cap = hdr_capability_from_info(&info);
-        assert!(cap.pq);
-        assert!(cap.bt2020_rgb);
-        assert!(cap.static_metadata_type1);
-        assert!(cap.max_luminance.is_some_and(|v| v > 0.0));
-        assert!(cap.min_luminance.is_some_and(|v| v > 0.0));
-        assert_eq!(cap.bpc, Some(10));
-        assert!(cap.has_10_bpc());
-    }
-
-    #[test]
-    fn test_hdr_capability_from_sdr_edid() {
-        let info = libdisplay_info::info::Info::parse_edid(&SDR_ONLY_EDID).unwrap();
-        let cap = hdr_capability_from_info(&info);
-        assert!(!cap.pq);
-        assert!(!cap.bt2020_rgb);
-        assert!(!cap.static_metadata_type1);
-        assert_eq!(cap.max_luminance, None);
-        assert_eq!(cap.min_luminance, None);
-        assert_eq!(cap.bpc, None);
-        assert!(!cap.has_10_bpc());
-    }
-
-    #[test]
-    fn hdr10_metadata_has_kernel_layout_and_values() {
-        assert_eq!(std::mem::size_of::<HdrOutputMetadata>(), 32);
-        let metadata = HdrOutputMetadata::hdr10(1000.0);
-        assert_eq!(metadata.metadata_type, 0);
-        assert_eq!(metadata.hdmi_metadata_type1.eotf, 2);
-        assert_eq!(
-            metadata.hdmi_metadata_type1.display_primaries,
-            [[35400, 14600], [8500, 39850], [6550, 2300]]
-        );
-        assert_eq!(
-            metadata.hdmi_metadata_type1.max_display_mastering_luminance,
-            1000
-        );
-        assert_eq!(metadata.hdmi_metadata_type1.max_fall, 400);
-    }
+    use crate::backend::tty::{calculate_drm_mode_from_modeline, calculate_mode_cvt};
 
     #[test]
     fn test_calculate_drmmode_from_modeline() {

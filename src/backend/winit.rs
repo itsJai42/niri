@@ -96,12 +96,6 @@ impl Winit {
                 vrr_enabled: false,
                 logical: Some(logical_output(&output)),
                 max_bpc: None,
-                hdr_supported: false,
-                hdr_enabled: false,
-                hdr_mode: niri_ipc::HdrMode::Off,
-                hdr_framebuffer_format: None,
-                hdr_reason: None,
-                sdr_reference_luminance: 203,
             },
         )])));
 
@@ -236,9 +230,6 @@ impl Winit {
             renderer: self.backend.renderer(),
             target: RenderTarget::Output,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: true,
-            sdr_reference_luminance: 203.0,
         };
         let mut elements = niri.render_to_vec(ctx, output, true);
 

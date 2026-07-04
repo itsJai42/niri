@@ -23,6 +23,7 @@ use smithay::backend::allocator::Fourcc;
 use smithay::backend::input::Keycode;
 use smithay::backend::renderer::damage::OutputDamageTracker;
 use smithay::backend::renderer::element::memory::MemoryRenderBufferRenderElement;
+use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::utils::{
     select_dmabuf_feedback, CropRenderElement, Relocate, RelocateRenderElement,
     RescaleRenderElement,
@@ -31,9 +32,8 @@ use smithay::backend::renderer::element::{
     default_primary_scanout_output_compare, Element, Id, Kind, PrimaryScanoutOutput, RenderElement,
     RenderElementStates,
 };
-use smithay::backend::renderer::gles::{GlesRenderer, GlesTexture};
+use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::backend::renderer::sync::SyncPoint;
-use smithay::backend::renderer::utils::CommitCounter;
 use smithay::backend::renderer::Color32F;
 use smithay::desktop::utils::{
     bbox_from_surface_tree, output_update, send_dmabuf_feedback_surface_tree,
@@ -145,7 +145,6 @@ use crate::layout::{
     HitType, Layout, LayoutElement as _, LayoutElementRenderElement, MonitorRenderElement,
 };
 use crate::niri_render_elements;
-use crate::protocols::color_management::ColorManagementManagerState;
 use crate::protocols::ext_workspace::{self, ExtWorkspaceManagerState};
 use crate::protocols::foreign_toplevel::{self, ForeignToplevelManagerState};
 use crate::protocols::gamma_control::GammaControlManagerState;
@@ -155,11 +154,10 @@ use crate::protocols::screencopy::{Screencopy, ScreencopyBuffer, ScreencopyManag
 use crate::protocols::virtual_pointer::VirtualPointerManagerState;
 use crate::render_helpers::blur::BlurOptions;
 use crate::render_helpers::debug::push_opaque_regions;
-use crate::render_helpers::hdr_output::HdrOutputRenderElement;
 use crate::render_helpers::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::solid_color::{SolidColorBuffer, SolidColorRenderElement};
-use crate::render_helpers::surface::{push_elements_from_surface_tree, SurfaceRenderElement};
+use crate::render_helpers::surface::push_elements_from_surface_tree;
 use crate::render_helpers::texture::TextureBuffer;
 use crate::render_helpers::xray::{Xray, XrayPos};
 use crate::render_helpers::{
@@ -312,7 +310,6 @@ pub struct Niri {
     pub presentation_state: PresentationState,
     pub security_context_state: SecurityContextState,
     pub gamma_control_manager_state: GammaControlManagerState,
-    pub color_management_state: ColorManagementManagerState,
     pub activation_state: XdgActivationState,
     pub mutter_x11_interop_state: MutterX11InteropManagerState,
 
@@ -454,15 +451,6 @@ pub struct OutputState {
     pub frame_clock: FrameClock,
     pub redraw_state: RedrawState,
     pub on_demand_vrr_enabled: bool,
-    pub hdr_supported: bool,
-    pub hdr_requested: bool,
-    pub hdr_active: bool,
-    pub hdr_max_luminance: f64,
-    pub hdr_texture: Option<GlesTexture>,
-    pub hdr_damage_tracker: OutputDamageTracker,
-    pub hdr_output_id: Id,
-    pub hdr_output_commit: CommitCounter,
-    pub sdr_reference_luminance: f64,
     // After the last redraw, some ongoing animations still remain.
     pub unfinished_animations_remain: bool,
     /// Last sequence received in a vblank event.
@@ -2075,9 +2063,6 @@ impl State {
                     target: RenderTarget::Output,
                     renderer,
                     xray: None,
-                    color_managed: false,
-                    tone_map_to_sdr: false,
-                    sdr_reference_luminance: 203.0,
                 };
 
                 self.niri.fill_xray_elements(ctx.r(), output);
@@ -2376,7 +2361,6 @@ impl Niri {
             GammaControlManagerState::new::<State, _>(&display_handle, move |client| {
                 is_tty && !client.get_data::<ClientState>().unwrap().restricted
             });
-        let color_management_state = ColorManagementManagerState::new::<State>(&display_handle);
         let activation_state = XdgActivationState::new::<State>(&display_handle);
         event_loop
             .insert_source(
@@ -2585,7 +2569,6 @@ impl Niri {
             presentation_state,
             security_context_state,
             gamma_control_manager_state,
-            color_management_state,
             activation_state,
             mutter_x11_interop_state,
             #[cfg(test)]
@@ -2889,40 +2872,10 @@ impl Niri {
         };
 
         let size = output_size(&output);
-        let tty_hdr = output
-            .user_data()
-            .get::<crate::backend::tty::TtyOutputState>();
-        let (hdr_supported, hdr_requested, sdr_reference_luminance, hdr_active, hdr_max_luminance) =
-            tty_hdr
-                .map(|state| {
-                    (
-                        state.hdr_supported,
-                        state.hdr_requested,
-                        state.sdr_reference_luminance,
-                        state.hdr_active,
-                        state.hdr_max_luminance,
-                    )
-                })
-                .unwrap_or((
-                    false,
-                    false,
-                    crate::render_helpers::color::SDR_REFERENCE_WHITE,
-                    false,
-                    1000.0,
-                ));
         let state = OutputState {
             global,
             redraw_state: RedrawState::Idle,
             on_demand_vrr_enabled: false,
-            hdr_supported,
-            hdr_requested,
-            hdr_active,
-            hdr_max_luminance,
-            hdr_texture: None,
-            hdr_damage_tracker: OutputDamageTracker::from_output(&output),
-            hdr_output_id: Id::new(),
-            hdr_output_commit: CommitCounter::default(),
-            sdr_reference_luminance,
             unfinished_animations_remain: false,
             frame_clock: FrameClock::new(refresh_interval, vrr),
             last_drm_sequence: None,
@@ -3747,9 +3700,6 @@ impl Niri {
         &self,
         renderer: &mut R,
         output: &Output,
-        color_managed: bool,
-        tone_map_to_sdr: bool,
-        sdr_reference_luminance: f64,
         push: &mut dyn FnMut(PointerRenderElements<R>),
     ) {
         let _span = tracy_client::span!("Niri::render_pointer");
@@ -3781,9 +3731,6 @@ impl Niri {
                     output_scale,
                     1.,
                     Kind::Cursor,
-                    color_managed,
-                    tone_map_to_sdr,
-                    sdr_reference_luminance,
                     &mut |elem| push(elem.into()),
                 );
             }
@@ -3825,9 +3772,6 @@ impl Niri {
                 output_scale,
                 1.,
                 Kind::ScanoutCandidate,
-                color_managed,
-                tone_map_to_sdr,
-                sdr_reference_luminance,
                 &mut |elem| push(elem.into()),
             );
         }
@@ -4243,8 +4187,6 @@ impl Niri {
                     PreviewRender::Screencast => RenderTarget::Screencast,
                     PreviewRender::ScreenCapture => RenderTarget::ScreenCapture,
                 };
-                ctx.color_managed = true;
-                ctx.tone_map_to_sdr = true;
             }
         }
 
@@ -4281,14 +4223,7 @@ impl Niri {
 
         // The pointer goes on the top.
         if include_pointer && self.pointer_visibility.is_visible() {
-            self.render_pointer(
-                ctx.renderer,
-                output,
-                ctx.color_managed,
-                ctx.tone_map_to_sdr,
-                ctx.sdr_reference_luminance,
-                &mut |elem| push(elem.into()),
-            );
+            self.render_pointer(ctx.renderer, output, &mut |elem| push(elem.into()));
         }
 
         // Next, the screen transition texture.
@@ -4317,9 +4252,6 @@ impl Niri {
                     output_scale,
                     1.,
                     Kind::ScanoutCandidate,
-                    ctx.color_managed,
-                    ctx.tone_map_to_sdr,
-                    ctx.sdr_reference_luminance,
                     &mut |elem| push(elem.into()),
                 );
             }
@@ -5352,12 +5284,6 @@ impl Niri {
                         renderer,
                         target: RenderTarget::ScreenCapture,
                         xray: None,
-                        color_managed: true,
-                        tone_map_to_sdr: true,
-                        sdr_reference_luminance: self
-                            .output_state
-                            .get(output)
-                            .map_or(203.0, |state| state.sdr_reference_luminance),
                     };
                     let offset = screencopy.region_loc().upscale(-1);
                     let mut elements = Vec::new();
@@ -5436,12 +5362,6 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: true,
-            sdr_reference_luminance: self
-                .output_state
-                .get(output)
-                .map_or(203.0, |state| state.sdr_reference_luminance),
         };
         let offset = screencopy.region_loc().upscale(-1);
         let mut elements = Vec::new();
@@ -5557,28 +5477,16 @@ impl Niri {
             let size = transform.transform_size(size);
 
             let scale = Scale::from(output.current_scale().fractional_scale());
-            let output_hdr = self
-                .output_state
-                .get(&output)
-                .is_some_and(|state| state.hdr_active);
-            let sdr_reference_luminance = self
-                .output_state
-                .get(&output)
-                .map_or(203.0, |state| state.sdr_reference_luminance);
             let targets = [
                 RenderTarget::Output,
                 RenderTarget::Screencast,
                 RenderTarget::ScreenCapture,
             ];
             let screenshot = targets.map(|target| {
-                let hdr_target = target == RenderTarget::Output && output_hdr;
                 let ctx = RenderCtx {
                     renderer,
                     target,
                     xray: None,
-                    color_managed: true,
-                    tone_map_to_sdr: !hdr_target,
-                    sdr_reference_luminance,
                 };
                 let elements = self.render_to_vec(ctx, &output, false);
                 let elements = elements.iter().rev();
@@ -5588,11 +5496,7 @@ impl Niri {
                     size,
                     scale,
                     Transform::Normal,
-                    if hdr_target {
-                        Fourcc::Abgr16161616f
-                    } else {
-                        Fourcc::Abgr8888
-                    },
+                    Fourcc::Abgr8888,
                     elements,
                 );
                 if let Err(err) = &res {
@@ -5606,9 +5510,7 @@ impl Niri {
                 // show the pointer even when it's hidden through cursor {} options. The user can
                 // then toggle it in the screenshot UI as needed.
                 if self.pointer_visibility != PointerVisibility::Disabled {
-                    self.render_pointer(renderer, &output, false, false, 203.0, &mut |elem| {
-                        pointer.push(elem)
-                    });
+                    self.render_pointer(renderer, &output, &mut |elem| pointer.push(elem));
                 }
 
                 let res_pointer = if pointer.is_empty() {
@@ -5667,12 +5569,6 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: true,
-            sdr_reference_luminance: self
-                .output_state
-                .get(output)
-                .map_or(203.0, |state| state.sdr_reference_luminance),
         };
         let elements = self.render_to_vec(ctx, output, include_pointer);
         let elements = elements.iter().rev();
@@ -5716,7 +5612,7 @@ impl Niri {
                 // Pointer elements are at output-local physical coords.
                 // Relocate by -win_pos to make them window-relative.
                 let pos = win_pos.to_physical_precise_round(scale).upscale(-1);
-                self.render_pointer(renderer, output, false, false, 203.0, &mut |elem| {
+                self.render_pointer(renderer, output, &mut |elem| {
                     let elem = RelocateRenderElement::from_element(elem, pos, Relocate::Relative);
                     elements.push(elem.into());
                 });
@@ -5728,12 +5624,6 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: true,
-            sdr_reference_luminance: self
-                .output_state
-                .get(output)
-                .map_or(203.0, |state| state.sdr_reference_luminance),
         };
         mapped.render(
             ctx,
@@ -5900,12 +5790,6 @@ impl Niri {
             renderer,
             target: RenderTarget::ScreenCapture,
             xray: None,
-            color_managed: true,
-            tone_map_to_sdr: true,
-            sdr_reference_luminance: self
-                .output_state
-                .get(&output)
-                .map_or(203.0, |state| state.sdr_reference_luminance),
         };
         let elements = self.render_to_vec(ctx, &output, include_pointer);
         let elements = elements.iter().rev();
@@ -6374,28 +6258,16 @@ impl Niri {
                 let transform = output.current_transform();
 
                 let scale = Scale::from(output.current_scale().fractional_scale());
-                let output_hdr = self
-                    .output_state
-                    .get(&output)
-                    .is_some_and(|state| state.hdr_active);
-                let sdr_reference_luminance = self
-                    .output_state
-                    .get(&output)
-                    .map_or(203.0, |state| state.sdr_reference_luminance);
                 let targets = [
                     RenderTarget::Output,
                     RenderTarget::Screencast,
                     RenderTarget::ScreenCapture,
                 ];
                 let textures = targets.map(|target| {
-                    let hdr_target = target == RenderTarget::Output && output_hdr;
                     let ctx = RenderCtx {
                         renderer,
                         target,
                         xray: None,
-                        color_managed: true,
-                        tone_map_to_sdr: !hdr_target,
-                        sdr_reference_luminance,
                     };
                     let elements = self.render_to_vec(ctx, &output, false);
                     let elements = elements.iter().rev();
@@ -6405,11 +6277,7 @@ impl Niri {
                         size,
                         scale,
                         transform,
-                        if hdr_target {
-                            Fourcc::Abgr16161616f
-                        } else {
-                            Fourcc::Abgr8888
-                        },
+                        Fourcc::Abgr8888,
                         elements,
                     );
 
@@ -6639,7 +6507,7 @@ fn scale_relocate_crop<E: Element>(
 
 niri_render_elements! {
     PointerRenderElements<R> => {
-        Surface = SurfaceRenderElement<R>,
+        Wayland = WaylandSurfaceRenderElement<R>,
         NamedPointer = MemoryRenderBufferRenderElement<R>,
     }
 }
@@ -6663,13 +6531,12 @@ niri_render_elements! {
             SolidColorRenderElement
         >>>,
         Pointer = PointerRenderElements<R>,
-        Surface = SurfaceRenderElement<R>,
+        Wayland = WaylandSurfaceRenderElement<R>,
         SolidColor = SolidColorRenderElement,
         ScreenshotUi = ScreenshotUiRenderElement,
         WindowMruUi = WindowMruUiRenderElement<R>,
         ExitConfirmDialog = ExitConfirmDialogRenderElement,
         Texture = PrimaryGpuTextureRenderElement,
-        HdrOutput = HdrOutputRenderElement,
         // Used for the CPU-rendered panels.
         RelocatedMemoryBuffer = RelocateRenderElement<MemoryRenderBufferRenderElement<R>>,
     }

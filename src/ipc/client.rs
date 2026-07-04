@@ -569,12 +569,6 @@ fn print_output(output: Output) -> anyhow::Result<()> {
         vrr_enabled,
         logical,
         max_bpc,
-        hdr_supported,
-        hdr_enabled,
-        hdr_mode,
-        hdr_framebuffer_format,
-        hdr_reason,
-        sdr_reference_luminance,
     } = output;
 
     let serial = serial.as_deref().unwrap_or("Unknown");
@@ -625,23 +619,6 @@ fn print_output(output: Output) -> anyhow::Result<()> {
     } else {
         println!("  Variable refresh rate: not supported");
     }
-
-    let hdr = if hdr_enabled {
-        "enabled".to_owned()
-    } else if hdr_supported {
-        hdr_reason
-            .map(|reason| reason.to_string())
-            .unwrap_or_else(|| "supported, disabled".to_owned())
-    } else {
-        hdr_reason
-            .map(|reason| reason.to_string())
-            .unwrap_or_else(|| "not supported".to_owned())
-    };
-    println!("  HDR: {hdr} (configured: {hdr_mode})");
-    if let Some(format) = hdr_framebuffer_format {
-        println!("  HDR framebuffer: ABGR16161616F -> {format}");
-    }
-    println!("  SDR reference luminance: {sdr_reference_luminance} cd/m²");
 
     if let Some((width, height)) = physical_size {
         println!("  Physical size: {width}x{height} mm");
