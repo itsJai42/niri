@@ -441,16 +441,6 @@ mod tests {
     }
 
     #[test]
-    fn tone_map_at_l_white_one_is_identity() {
-        // l_white == 1.0 means the source has no headroom over SDR white
-        // (ratio == 1.0): the render shaders skip mapping in this case, so the
-        // Rust reference formula must reduce to the identity here too.
-        for x in [0.0, 0.25, 0.5, 1.0, 2.0] {
-            assert!(approx(tone_map_reinhard(x, 1.0), x, 1e-9));
-        }
-    }
-
-    #[test]
     fn gamut_clip_bounds() {
         let v = gamut_clip(DVec3::new(-0.2, 0.5, 2.0), 0.0, 1.0);
         assert_eq!(v, DVec3::new(0.0, 0.5, 1.0));

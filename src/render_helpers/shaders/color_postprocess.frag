@@ -2,7 +2,6 @@ uniform float source_tf;
 uniform float luminance_scale;
 uniform mat3 gamut_matrix;
 uniform float output_sdr;
-uniform float source_peak_ratio;
 
 float color_srgb_eotf_channel(float value) {
     float magnitude = abs(value);
@@ -53,15 +52,9 @@ vec4 postprocess(vec4 color) {
         color.rgb = color_pq_eotf(color.rgb);
     color.rgb = gamut_matrix * color.rgb * luminance_scale;
     if (output_sdr == 1.0) {
-        // Reinhard rolloff toward the source's own peak headroom, instead of a
-        // hard clip: highlights above SDR white compress smoothly rather than
-        // crushing flat at 1.0. SDR sources (ratio == 1.0) pass through as-is.
         float peak = max(max(color.r, color.g), color.b);
-        if (peak > 0.0) {
-            float l_white = max(source_peak_ratio, 1.0);
-            float mapped = peak * (1.0 + peak / (l_white * l_white)) / (1.0 + peak);
-            color.rgb *= mapped / peak;
-        }
+        if (peak > 1.0)
+            color.rgb /= peak;
         color.rgb = color_srgb_oetf(max(color.rgb, vec3(0.0)));
     }
     color.rgb *= color.a;
