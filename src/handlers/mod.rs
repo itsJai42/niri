@@ -803,6 +803,15 @@ impl ColorManagementHandler for State {
             .map(|output| self.image_description_for_output(output))
             .unwrap_or_else(crate::render_helpers::color::ImageDescription::srgb)
     }
+
+    fn defer_info_done(
+        &mut self,
+        info: smithay::reexports::wayland_protocols::wp::color_management::v1::server::wp_image_description_info_v1::WpImageDescriptionInfoV1,
+    ) {
+        self.niri.event_loop.insert_idle(move |_| {
+            info.done();
+        });
+    }
 }
 crate::delegate_color_management!(State);
 

@@ -299,6 +299,14 @@ pub trait ColorManagementHandler {
     fn preferred_image_description(&mut self, _surface: &WlSurface) -> ImageDescription {
         ImageDescription::srgb()
     }
+
+    /// Send `done` on `info` after the current dispatch completes.
+    ///
+    /// `done` is a destructor event. Sending it inside the dispatch that created the
+    /// object destroys the resource while wayland-backend still holds a pointer to its
+    /// user data, which it writes to after the handler returns (use-after-free, segfault).
+    /// Implementations must defer it, e.g. via `LoopHandle::insert_idle`.
+    fn defer_info_done(&mut self, info: WpImageDescriptionInfoV1);
 }
 
 /// Delegate state for the `wp_color_manager_v1` global.
@@ -610,10 +618,11 @@ impl<D> Dispatch<WpImageDescriptionV1, ImageDescriptionData, D> for ColorManagem
 where
     D: Dispatch<WpImageDescriptionV1, ImageDescriptionData>,
     D: Dispatch<WpImageDescriptionInfoV1, ()>,
+    D: ColorManagementHandler,
     D: 'static,
 {
     fn request(
-        _state: &mut D,
+        state: &mut D,
         _client: &Client,
         obj: &WpImageDescriptionV1,
         request: <WpImageDescriptionV1 as Resource>::Request,
@@ -637,6 +646,7 @@ where
                 }
                 let info = data_init.init(information, ());
                 send_information(&info, &ready.description);
+                state.defer_info_done(info);
             }
             Request::Destroy => (),
             _ => (),
@@ -698,7 +708,8 @@ fn send_information(info: &WpImageDescriptionInfoV1, desc: &ImageDescription) {
         (desc.min_luminance * 10000.0).round() as u32,
         desc.max_luminance.round() as u32,
     );
-    info.done();
+    // `done` is deliberately NOT sent here: it is a destructor event and must be
+    // deferred out of the creating dispatch (see ColorManagementHandler::defer_info_done).
 }
 
 impl<D> Dispatch<WpColorManagementOutputV1, ColorOutputData, D> for ColorManagementManagerState
