@@ -14,6 +14,7 @@ use smithay::backend::renderer::sync::SyncPoint;
 use smithay::backend::renderer::{
     Bind, Color32F, ExportMem, Frame, Offscreen, Renderer, Texture as _,
 };
+use smithay::output::Output;
 use smithay::reexports::wayland_server::protocol::wl_buffer::WlBuffer;
 use smithay::reexports::wayland_server::protocol::wl_shm;
 use smithay::utils::user_data::UserDataMap;
@@ -24,17 +25,21 @@ use solid_color::{SolidColorBuffer, SolidColorRenderElement};
 use self::primary_gpu_texture::PrimaryGpuTextureRenderElement;
 use self::texture::{TextureBuffer, TextureRenderElement};
 use crate::render_helpers::renderer::AsGlesRenderer;
+use crate::render_helpers::renderer::NiriRenderer;
 use crate::render_helpers::xray::Xray;
 
 pub mod background_effect;
 pub mod blur;
 pub mod border;
 pub mod clipped_surface;
+pub mod color;
+pub mod color_surface;
 pub mod damage;
 pub mod debug;
 pub mod effect_buffer;
 pub mod framebuffer_effect;
 pub mod gradient_fade_texture;
+pub mod hdr_output;
 pub mod memory;
 pub mod offscreen;
 pub mod primary_gpu_texture;
@@ -58,6 +63,11 @@ pub struct RenderCtx<'a, R> {
     pub renderer: &'a mut R,
     pub target: RenderTarget,
     pub xray: Option<&'a Xray>,
+    /// Decode surface colors into the linear scRGB HDR working space.
+    pub color_managed: bool,
+    /// Encode tagged HDR surfaces into ordinary sRGB for capture.
+    pub tone_map_to_sdr: bool,
+    pub sdr_reference_luminance: f64,
 }
 
 impl<'a, R> RenderCtx<'a, R> {
@@ -68,6 +78,9 @@ impl<'a, R> RenderCtx<'a, R> {
             renderer: self.renderer,
             target: self.target,
             xray: self.xray,
+            color_managed: self.color_managed,
+            tone_map_to_sdr: self.tone_map_to_sdr,
+            sdr_reference_luminance: self.sdr_reference_luminance,
         }
     }
 }
@@ -78,6 +91,9 @@ impl<'a, R: AsGlesRenderer> RenderCtx<'a, R> {
             renderer: self.renderer.as_gles_renderer(),
             target: self.target,
             xray: self.xray,
+            color_managed: self.color_managed,
+            tone_map_to_sdr: self.tone_map_to_sdr,
+            sdr_reference_luminance: self.sdr_reference_luminance,
         }
     }
 }
@@ -228,6 +244,60 @@ pub fn render_to_texture(
     };
 
     Ok((texture, sync_point))
+}
+
+/// Compose an output into an offscreen texture and retain the original element
+/// states for presentation feedback. HDR uses this before its final PQ pass.
+#[allow(clippy::type_complexity)]
+pub fn render_output_to_texture<R, E>(
+    renderer: &mut R,
+    output: &Output,
+    fourcc: Fourcc,
+    elements: &[E],
+    texture: &mut Option<GlesTexture>,
+    damage: &mut OutputDamageTracker,
+) -> anyhow::Result<(
+    GlesTexture,
+    SyncPoint,
+    RenderElementStates,
+    Option<Vec<Rectangle<i32, Physical>>>,
+)>
+where
+    R: NiriRenderer,
+    E: RenderElement<R>,
+{
+    let size = output.current_mode().context("output has no mode")?.size;
+    let size = output.current_transform().transform_size(size);
+    let scale = output.current_scale().fractional_scale();
+    let mode_changed = damage.mode().clone()
+        != smithay::output::OutputModeSource::Static {
+            size,
+            scale: scale.into(),
+            transform: Transform::Normal,
+        };
+    let texture_changed = texture.as_ref().is_none_or(|texture| {
+        texture.size() != Size::from((size.w, size.h)) || texture.format() != Some(fourcc)
+    });
+    if mode_changed || texture_changed {
+        let buffer_size = Size::<i32, smithay::utils::Buffer>::from((size.w, size.h));
+        *texture = Some(
+            renderer
+                .create_buffer(fourcc, buffer_size)
+                .context("error creating output texture")?,
+        );
+        *damage = OutputDamageTracker::new(size, scale, Transform::Normal);
+    }
+    let texture = texture.as_mut().unwrap();
+    let (sync, states, rendered_damage) = {
+        let mut target = renderer
+            .bind(texture)
+            .context("error binding output texture")?;
+        let result = damage
+            .render_output(renderer, &mut target, 1, elements, Color32F::TRANSPARENT)
+            .context("error composing output texture")?;
+        (result.sync, result.states, result.damage.cloned())
+    };
+    Ok((texture.clone(), sync, states, rendered_damage))
 }
 
 pub fn render_and_download(

@@ -746,6 +746,8 @@ mod tests {
                 position x=10 y=20
                 mode "1920x1080@144"
                 max-bpc 10
+                hdr "auto"
+                sdr-reference-luminance 250
                 variable-refresh-rate on-demand=true
                 background-color "rgba(25, 25, 102, 1.0)"
                 hot-corners {
@@ -1166,6 +1168,12 @@ mod tests {
                                 _10,
                             ),
                         ),
+                        hdr: Auto,
+                        sdr_reference_luminance: Some(
+                            FloatOrInt(
+                                250.0,
+                            ),
+                        ),
                         mode: Some(
                             Mode {
                                 custom: false,
@@ -1212,6 +1220,8 @@ mod tests {
                         transform: Normal,
                         position: None,
                         max_bpc: None,
+                        hdr: Off,
+                        sdr_reference_luminance: None,
                         mode: Some(
                             Mode {
                                 custom: true,
@@ -1239,6 +1249,8 @@ mod tests {
                         transform: Normal,
                         position: None,
                         max_bpc: None,
+                        hdr: Off,
+                        sdr_reference_luminance: None,
                         mode: None,
                         modeline: Some(
                             Modeline {

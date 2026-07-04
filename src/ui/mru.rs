@@ -376,12 +376,18 @@ impl Thumbnail {
         };
 
         let has_border_shader = BorderRenderElement::has_shader(ctx.renderer);
-        let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer).cloned();
+        let clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer, false).cloned();
+        let color_clip_shader = ClippedSurfaceRenderElement::shader(ctx.renderer, true).cloned();
         let geo = Rectangle::from_size(self.size.to_f64());
         // FIXME: deduplicate code with Tile::render_inner()
         let clip = move |elem| match elem {
-            LayoutElementRenderElement::Wayland(elem) => {
-                if let Some(shader) = clip_shader.clone() {
+            LayoutElementRenderElement::Surface(elem) => {
+                let shader = if elem.is_color_managed() {
+                    color_clip_shader.clone()
+                } else {
+                    clip_shader.clone()
+                };
+                if let Some(shader) = shader {
                     if ClippedSurfaceRenderElement::will_clip(&elem, s, geo, radius) {
                         let elem =
                             ClippedSurfaceRenderElement::new(elem, s, geo, shader.clone(), radius);
@@ -390,7 +396,7 @@ impl Thumbnail {
                 }
 
                 // If we don't have the shader, render it normally.
-                let elem = LayoutElementRenderElement::Wayland(elem);
+                let elem = LayoutElementRenderElement::Surface(elem);
                 ThumbnailRenderElement::LayoutElement(elem)
             }
             LayoutElementRenderElement::SolidColor(elem) => {

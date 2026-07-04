@@ -16,6 +16,8 @@ output "eDP-1" {
     focus-at-startup
     backdrop-color "#001100"
     // max-bpc 8
+    // hdr "auto"
+    // sdr-reference-luminance 203
 
     hot-corners {
         // off
@@ -300,6 +302,25 @@ output "HDMI-A-1" {
     max-bpc 8
 }
 ```
+
+### `hdr` and `sdr-reference-luminance`
+
+<sup>Since: next release</sup>
+
+Enable HDR10 output and set the luminance used for ordinary SDR white while HDR is active:
+
+```kdl
+output "DP-1" {
+    hdr "auto"
+    sdr-reference-luminance 203
+}
+```
+
+`hdr` accepts `"off"` (the default), `"on"`, or `"auto"`. Both `"on"` and `"auto"` fall back safely to SDR when the display, renderer, or KMS path cannot provide HDR10; `"on"` additionally represents an explicit user request in diagnostics. Use `niri msg outputs` to see capability, active state, and the fallback reason.
+
+`sdr-reference-luminance` accepts `1` through `10000` cd/m² and defaults to `203`. Increase it if SDR desktop content is too dim next to HDR content. HDR requires at least 10 bits per channel; an explicit `max-bpc` below `10` disables HDR rather than overriding your setting.
+
+Screenshots and screencasts are tone-mapped to SDR. Gamma-control clients are rejected while HDR is active. Direct scanout, overlay planes, and hardware cursor planes are disabled on HDR outputs so every element passes through the color pipeline.
 
 ### `hot-corners`
 

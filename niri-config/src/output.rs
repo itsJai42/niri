@@ -61,6 +61,10 @@ pub struct Output {
     pub position: Option<Position>,
     #[knuffel(child, unwrap(argument))]
     pub max_bpc: Option<MaxBpc>,
+    #[knuffel(child, unwrap(argument, str), default = HdrMode::Off)]
+    pub hdr: HdrMode,
+    #[knuffel(child, unwrap(argument))]
+    pub sdr_reference_luminance: Option<FloatOrInt<1, 10000>>,
     #[knuffel(child)]
     pub mode: Option<Mode>,
     #[knuffel(child)]
@@ -104,6 +108,8 @@ impl Default for Output {
             transform: Transform::Normal,
             position: None,
             max_bpc: None,
+            hdr: HdrMode::Off,
+            sdr_reference_luminance: None,
             mode: None,
             modeline: None,
             variable_refresh_rate: None,
@@ -111,6 +117,29 @@ impl Default for Output {
             backdrop_color: None,
             hot_corners: None,
             layout: None,
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum HdrMode {
+    #[default]
+    Off,
+    On,
+    Auto,
+}
+
+impl FromStr for HdrMode {
+    type Err = miette::Error;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "off" => Ok(Self::Off),
+            "on" => Ok(Self::On),
+            "auto" => Ok(Self::Auto),
+            _ => Err(miette::miette!(
+                r#"invalid HDR mode, can be "off", "on" or "auto""#
+            )),
         }
     }
 }

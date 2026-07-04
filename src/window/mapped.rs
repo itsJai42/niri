@@ -2,7 +2,6 @@ use std::cell::{Cell, Ref, RefCell};
 use std::time::Duration;
 
 use niri_config::{Color, Config, CornerRadius, GradientInterpolation, WindowRule};
-use smithay::backend::renderer::element::surface::WaylandSurfaceRenderElement;
 use smithay::backend::renderer::element::Kind;
 use smithay::backend::renderer::gles::GlesRenderer;
 use smithay::desktop::space::SpaceElement as _;
@@ -548,6 +547,9 @@ impl Mapped {
                 renderer,
                 target: RenderTarget::Screencast,
                 xray: None,
+                color_managed: true,
+                tone_map_to_sdr: true,
+                sdr_reference_luminance: 203.0,
             },
             location,
             scale,
@@ -660,7 +662,6 @@ impl LayoutElement for Mapped {
         } else {
             let buf_pos = location - self.window.geometry().loc.to_f64();
             let surface = self.toplevel().wl_surface();
-            let mut push = |elem: WaylandSurfaceRenderElement<R>| push(elem.into());
             push_elements_from_surface_tree(
                 ctx.renderer,
                 surface,
@@ -668,7 +669,10 @@ impl LayoutElement for Mapped {
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
-                &mut push,
+                ctx.color_managed,
+                ctx.tone_map_to_sdr,
+                ctx.sdr_reference_luminance,
+                &mut |elem| push(elem.into()),
             )
         }
     }
@@ -706,6 +710,9 @@ impl LayoutElement for Mapped {
                 scale,
                 alpha,
                 Kind::ScanoutCandidate,
+                ctx.color_managed,
+                ctx.tone_map_to_sdr,
+                ctx.sdr_reference_luminance,
                 &mut |elem| push(elem.into()),
             );
 
