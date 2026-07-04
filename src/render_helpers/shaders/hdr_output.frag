@@ -37,12 +37,20 @@ void main() {
     if (color.a > 0.0)
         color.rgb /= color.a;
 
-    vec3 nits = gamut_matrix * color.rgb * sdr_reference_luminance;
-    float max_channel = max(max(nits.r, nits.g), nits.b);
-    if (max_channel > target_peak_luminance)
-        nits *= target_peak_luminance / max_channel;
+    // Reinhard rolloff toward the output's peak luminance instead of a hard
+    // clip, worked in SDR-white-normalized units (matches
+    // render_helpers::color::tone_map_reinhard's tested domain) then scaled
+    // back to nits for the PQ encode.
+    vec3 l = gamut_matrix * max(color.rgb, vec3(0.0));
+    float peak = max(max(l.r, l.g), l.b);
+    if (peak > 0.0) {
+        float l_white = max(target_peak_luminance / sdr_reference_luminance, 1.0);
+        float mapped = peak * (1.0 + peak / (l_white * l_white)) / (1.0 + peak);
+        l *= mapped / peak;
+    }
+    vec3 nits = max(l, vec3(0.0)) * sdr_reference_luminance;
 
-    color.rgb = pq_oetf(max(nits, vec3(0.0)) / 10000.0) * color.a;
+    color.rgb = pq_oetf(nits / 10000.0) * color.a;
     color *= alpha;
 
 #if defined(DEBUG_FLAGS)
