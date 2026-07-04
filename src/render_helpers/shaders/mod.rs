@@ -145,6 +145,7 @@ impl Shaders {
                     UniformName::new("luminance_scale", UniformType::_1f),
                     UniformName::new("gamut_matrix", UniformType::Matrix3x3),
                     UniformName::new("output_sdr", UniformType::_1f),
+                    UniformName::new("source_peak_ratio", UniformType::_1f),
                 ],
             )
             .map_err(|err| warn!("error compiling color clipped surface shader: {err:?}"))
@@ -158,6 +159,7 @@ impl Shaders {
                     UniformName::new("luminance_scale", UniformType::_1f),
                     UniformName::new("gamut_matrix", UniformType::Matrix3x3),
                     UniformName::new("output_sdr", UniformType::_1f),
+                    UniformName::new("source_peak_ratio", UniformType::_1f),
                 ],
             )
             .map_err(|err| warn!("error compiling color transform shader: {err:?}"))

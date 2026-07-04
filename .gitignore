@@ -1,4 +1,286 @@
 /target
 /result
+# ============================================================
+# AI / agent / coding assistant junk
+# ============================================================
 
-.idea
+# Claude
+.claude/
+.claude.json
+.claude.local.json
+.omc
+# Cursor / Windsurf / VS Code AI-ish workspace state
+.cursor/
+.cursorignore
+.windsurf/
+.continue/
+.continueignore
+
+# Aider
+.aider*
+.aider/
+.aider.chat.history.md
+.aider.input.history
+.aider.tags.cache.v3/
+
+# OpenCode / opencode
+.opencoderc
+opencode.json
+opencode.lock
+.opencode/
+.oh-my-opencode/
+AGENTS.local.md
+
+# Codex / OpenAI / ChatGPT-style agent state
+.codex/
+.openai/
+.chatgpt/
+.gpt/
+.gptignore
+
+# Gemini / Google agent tools
+.gemini/
+gemini.md
+GEMINI.local.md
+
+# Qwen / other local agent tools
+.qwen/
+.qwenignore
+
+# Cline / Roo / Continue / agent work dirs
+.cline/
+.roo/
+.roocode/
+.agent/
+.agents/
+.agent-workspace/
+.agent-cache/
+.agent-state/
+.agent-history/
+.agent-memory/
+.agent-output/
+.agent-tmp/
+.agent_logs/
+.agent-logs/
+
+# Generic agent scratch/output files
+*.agent.log
+*.agent.json
+*.agent.md
+agent.log
+agent-output/
+agent-tmp/
+agent-cache/
+agent-memory/
+agent-history/
+scratchpad.md
+scratch.md
+notes.local.md
+todo.local.md
+plan.local.md
+implementation-plan.local.md
+
+# Local prompt / context files that should not be committed
+PROMPTS.local.md
+CONTEXT.local.md
+INSTRUCTIONS.local.md
+MEMORY.local.md
+SECRETS.local.md
+
+
+# ============================================================
+# Secrets / local env
+# ============================================================
+
+.env
+.env.*
+!.env.example
+!.env.sample
+*.pem
+*.key
+*.cert
+*.crt
+*.p12
+*.pfx
+*.secret
+secrets/
+secret/
+.private/
+.local/
+
+
+# ============================================================
+# Logs / debug output
+# ============================================================
+
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+debug.log
+error.log
+trace.log
+
+
+# ============================================================
+# OS junk
+# ============================================================
+
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.Trashes
+.fseventsd
+.Spotlight-V100
+
+
+# ============================================================
+# Editor / IDE junk
+# ============================================================
+
+.idea/
+*.iml
+*.iws
+*.ipr
+
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.example.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+
+# ============================================================
+# Build / cache / temp
+# ============================================================
+
+tmp/
+temp/
+.tmp/
+.cache/
+build/
+dist/
+out/
+target/
+coverage/
+.nyc_output/
+.cache-loader/
+.parcel-cache/
+.turbo/
+.next/
+.nuxt/
+.svelte-kit/
+vite.config.ts.timestamp-*
+vite.config.js.timestamp-*
+
+
+# ============================================================
+# Node / JS / TS
+# ============================================================
+
+node_modules/
+.pnpm-store/
+.yarn/
+!.yarn/releases
+!.yarn/plugins
+!.yarn/sdks
+!.yarn/versions
+bun.lockb
+
+
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+.tox/
+.venv/
+venv/
+env/
+ENV/
+dist/
+build/
+*.egg-info/
+
+
+# ============================================================
+# Rust
+# ============================================================
+
+target/
+Cargo.lock
+
+
+# Keep Cargo.lock for apps; ignore it for libraries only if intentional.
+# For Rust apps, remove the Cargo.lock line above.
+
+
+# ============================================================
+# Go
+# ============================================================
+
+bin/
+*.test
+*.out
+
+
+# ============================================================
+# Java / Kotlin / Gradle
+# ============================================================
+
+.gradle/
+build/
+*.class
+*.jar
+*.war
+*.ear
+
+
+# ============================================================
+# C / C++ / Zig
+# ============================================================
+
+zig-cache/
+zig-out/
+.zig-cache/
+*.o
+*.obj
+*.so
+*.dylib
+*.dll
+*.exe
+*.a
+*.lib
+*.out
+
+
+# ============================================================
+# Database / local data
+# ============================================================
+
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+data/
+.local-data/

@@ -16,7 +16,7 @@ use crate::backend::tty::{TtyFrame, TtyRenderer, TtyRendererError};
 pub struct ColorSurfaceRenderElement<R: NiriRenderer> {
     inner: WaylandSurfaceRenderElement<R>,
     program: GlesTexProgram,
-    uniforms: [Uniform<'static>; 4],
+    uniforms: [Uniform<'static>; 5],
 }
 
 impl<R: NiriRenderer> ColorSurfaceRenderElement<R> {
@@ -45,6 +45,10 @@ impl<R: NiriRenderer> ColorSurfaceRenderElement<R> {
             ),
             mat3_uniform("gamut_matrix", gamut).into_owned(),
             Uniform::new("output_sdr", f32::from(tone_map_to_sdr)),
+            Uniform::new(
+                "source_peak_ratio",
+                (source.max_luminance / sdr_reference_luminance).max(1.0) as f32,
+            ),
         ];
         Some(Self {
             inner,

@@ -18,6 +18,7 @@ uniform float source_tf;
 uniform float luminance_scale;
 uniform mat3 gamut_matrix;
 uniform float output_sdr;
+uniform float source_peak_ratio;
 varying vec2 v_coords;
 
 #if defined(DEBUG_FLAGS)
@@ -80,9 +81,13 @@ void main() {
 
     color.rgb = gamut_matrix * color.rgb * luminance_scale;
     if (output_sdr == 1.0) {
+        // Keep in sync with color_postprocess.frag's postprocess().
         float peak = max(max(color.r, color.g), color.b);
-        if (peak > 1.0)
-            color.rgb /= peak;
+        if (peak > 0.0) {
+            float l_white = max(source_peak_ratio, 1.0);
+            float mapped = peak * (1.0 + peak / (l_white * l_white)) / (1.0 + peak);
+            color.rgb *= mapped / peak;
+        }
         color.rgb = srgb_oetf(max(color.rgb, vec3(0.0)));
     }
     color.rgb *= color.a;
