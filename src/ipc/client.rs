@@ -700,7 +700,12 @@ fn print_output(output: Output) -> anyhow::Result<()> {
 fn print_window(window: &Window) {
     let focused = if window.is_focused { " (focused)" } else { "" };
     let urgent = if window.is_urgent { " (urgent)" } else { "" };
-    println!("Window ID {}:{focused}{urgent}", window.id);
+    let always_on_top = if window.is_always_on_top {
+        " (always-on-top)"
+    } else {
+        ""
+    };
+    println!("Window ID {}:{focused}{urgent}{always_on_top}", window.id);
 
     if let Some(title) = &window.title {
         println!("  Title: \"{title}\"");
@@ -717,6 +722,10 @@ fn print_window(window: &Window) {
     println!(
         "  Is floating: {}",
         if window.is_floating { "yes" } else { "no" }
+    );
+    println!(
+        "  Is always on top: {}",
+        if window.is_always_on_top { "yes" } else { "no" }
     );
 
     if let Some(pid) = window.pid {

@@ -96,6 +96,9 @@ pub struct Mapped {
     /// Whether this window is floating.
     is_floating: bool,
 
+    /// Whether this window is pinned above other windows.
+    is_always_on_top: bool,
+
     /// Whether this window is a target of a window cast.
     is_window_cast_target: bool,
 
@@ -288,6 +291,7 @@ impl Mapped {
             is_focused: false,
             is_active_in_column: true,
             is_floating: false,
+            is_always_on_top: false,
             is_window_cast_target: false,
             ignore_opacity_window_rule: false,
             block_out_buffer: RefCell::new(SolidColorBuffer::new((0., 0.), [0., 0., 0., 1.])),
@@ -376,6 +380,18 @@ impl Mapped {
 
     pub fn is_floating(&self) -> bool {
         self.is_floating
+    }
+
+    pub fn is_always_on_top(&self) -> bool {
+        self.is_always_on_top
+    }
+
+    pub fn set_always_on_top(&mut self, value: bool) {
+        self.is_always_on_top = value;
+    }
+
+    pub fn toggle_always_on_top(&mut self) {
+        self.is_always_on_top = !self.is_always_on_top;
     }
 
     pub fn is_window_cast_target(&self) -> bool {
@@ -1002,10 +1018,22 @@ impl LayoutElement for Mapped {
         self.need_to_recompute_rules |= changed;
     }
 
+    fn is_floating(&self) -> bool {
+        self.is_floating
+    }
+
     fn set_floating(&mut self, floating: bool) {
         let changed = self.is_floating != floating;
         self.is_floating = floating;
         self.need_to_recompute_rules |= changed;
+    }
+
+    fn is_always_on_top(&self) -> bool {
+        self.is_always_on_top
+    }
+
+    fn set_always_on_top(&mut self, value: bool) {
+        self.is_always_on_top = value;
     }
 
     fn set_bounds(&self, bounds: Size<i32, Logical>) {

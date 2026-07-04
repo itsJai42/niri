@@ -239,9 +239,13 @@ pub trait LayoutElement {
     fn set_offscreen_data(&self, data: Option<OffscreenData>);
     fn set_activated(&mut self, active: bool);
     fn set_active_in_column(&mut self, active: bool);
+    fn is_floating(&self) -> bool;
     fn set_floating(&mut self, floating: bool);
     fn set_bounds(&self, bounds: Size<i32, Logical>);
     fn is_ignoring_opacity_window_rule(&self) -> bool;
+
+    fn is_always_on_top(&self) -> bool;
+    fn set_always_on_top(&mut self, value: bool);
 
     fn is_urgent(&self) -> bool;
 
@@ -1241,6 +1245,27 @@ impl<W: LayoutElement> Layout<W> {
                 for ws in workspaces {
                     if ws.has_window(window) {
                         ws.update_window(window, serial);
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn update_window_always_on_top(&mut self, window: &W::Id, value: bool) {
+        match &mut self.monitor_set {
+            MonitorSet::Normal { monitors, .. } => {
+                for mon in monitors {
+                    for ws in &mut mon.workspaces {
+                        if ws.update_window_always_on_top(window, value) {
+                            return;
+                        }
+                    }
+                }
+            }
+            MonitorSet::NoOutputs { workspaces } => {
+                for ws in workspaces {
+                    if ws.update_window_always_on_top(window, value) {
                         return;
                     }
                 }
@@ -3215,6 +3240,38 @@ impl<W: LayoutElement> Layout<W> {
             return;
         };
         workspace.set_window_floating(window, floating);
+    }
+
+    pub fn toggle_window_always_on_top(&mut self, window: Option<&W::Id>) {
+        let Some(id) = window.cloned().or_else(|| {
+            self.active_workspace()
+                .and_then(|ws| ws.active_window())
+                .map(|win| win.id().clone())
+        }) else {
+            return;
+        };
+
+        let mut found = false;
+        let mut was_floating = false;
+        let mut value = false;
+        self.with_windows_mut(|win, _| {
+            if win.id() == &id {
+                found = true;
+                was_floating = win.is_floating();
+                value = !win.is_always_on_top();
+                win.set_always_on_top(value);
+            }
+        });
+
+        if !found {
+            return;
+        }
+
+        if !was_floating && value {
+            self.set_window_floating(Some(&id), true);
+        }
+
+        self.update_window_always_on_top(&id, value);
     }
 
     pub fn focus_floating(&mut self) {

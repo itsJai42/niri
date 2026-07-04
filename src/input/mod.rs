@@ -2175,6 +2175,20 @@ impl State {
                     self.niri.queue_redraw_all();
                 }
             }
+            Action::ToggleWindowAlwaysOnTop => {
+                self.niri.layout.toggle_window_always_on_top(None);
+                // FIXME: granular
+                self.niri.queue_redraw_all();
+            }
+            Action::ToggleWindowAlwaysOnTopById(id) => {
+                let window = self.niri.layout.windows().find(|(_, m)| m.id().get() == id);
+                let window = window.map(|(_, m)| m.window.clone());
+                if let Some(window) = window {
+                    self.niri.layout.toggle_window_always_on_top(Some(&window));
+                    // FIXME: granular
+                    self.niri.queue_redraw_all();
+                }
+            }
             Action::FocusFloating => {
                 self.niri.layout.focus_floating();
                 self.maybe_warp_cursor_to_focus();
@@ -2867,20 +2881,19 @@ impl State {
 
                     self.niri.layout.focus_output(&output);
 
-                        let location = pointer.current_location();
-                        let start_data = PointerGrabStartData {
-                            focus: None,
-                            button: button_code,
-                            location,
-                        };
-                        let free_scroll =
-                            modifiers_from_state(mods).contains(Modifiers::CTRL);
-                        let grab =
-                            SpatialMovementGrab::new(start_data, output, ws_id, false, free_scroll);
-                        pointer.set_grab(self, grab, serial, Focus::Clear);
-                        self.niri
-                            .cursor_manager
-                            .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
+                    let location = pointer.current_location();
+                    let start_data = PointerGrabStartData {
+                        focus: None,
+                        button: button_code,
+                        location,
+                    };
+                    let free_scroll = modifiers_from_state(mods).contains(Modifiers::CTRL);
+                    let grab =
+                        SpatialMovementGrab::new(start_data, output, ws_id, false, free_scroll);
+                    pointer.set_grab(self, grab, serial, Focus::Clear);
+                    self.niri
+                        .cursor_manager
+                        .set_cursor_image(CursorImageStatus::Named(CursorIcon::AllScroll));
 
                     // FIXME: granular.
                     self.niri.queue_redraw_all();
@@ -3956,9 +3969,12 @@ impl State {
 
                         if let Some((output, ws)) = output_ws {
                             let ws_idx = self.niri.layout.find_workspace_by_id(ws.id()).unwrap().0;
-                            self.niri
-                                .layout
-                                .view_offset_gesture_begin(&output, Some(ws_idx), true, false);
+                            self.niri.layout.view_offset_gesture_begin(
+                                &output,
+                                Some(ws_idx),
+                                true,
+                                false,
+                            );
                         }
                     } else {
                         self.niri
