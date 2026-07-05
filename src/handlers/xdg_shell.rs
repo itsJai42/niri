@@ -1382,10 +1382,18 @@ impl State {
             .layout
             .find_window_and_output_mut(toplevel.wl_surface())
         {
-            if mapped.recompute_window_rules(window_rules, self.niri.is_at_startup) {
+            let old_always_on_top = mapped.is_always_on_top();
+            let _ = mapped.recompute_window_rules(window_rules, self.niri.is_at_startup);
+            let always_on_top = mapped.is_always_on_top();
+            let changed = old_always_on_top != always_on_top;
+            if changed {
                 drop(config);
                 let output = output.cloned();
                 let window = mapped.window.clone();
+                let _ = mapped;
+                self.niri
+                    .layout
+                    .update_window_always_on_top(&window, always_on_top);
                 self.niri.layout.update_window(&window, None);
 
                 if let Some(output) = output {

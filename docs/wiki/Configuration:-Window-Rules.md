@@ -99,6 +99,7 @@ window-rule {
     clip-to-geometry true
     tiled-state true
     baba-is-float true
+    always-on-top true
 
     background-effect {
         xray true
@@ -927,6 +928,22 @@ window-rule {
 https://github.com/user-attachments/assets/3f4cb1a4-40b2-4766-98b7-eec014c19509
 
 </video>
+
+#### `always-on-top`
+
+<sup>Since: next release</sup>
+
+Pin the window above all other windows. This only affects windows in the floating layout; if a tiled window is pinned, it will auto-float when the pin is applied.
+
+```kdl
+// Keep the picture-in-picture window on top.
+window-rule {
+    match app-id="firefox$" title="^Picture-in-Picture$"
+
+    open-floating true
+    always-on-top true
+}
+```
 
 #### `background-effect`
 

@@ -343,6 +343,9 @@ pub enum Action {
     MoveWindowToTiling,
     #[knuffel(skip)]
     MoveWindowToTilingById(u64),
+    ToggleWindowAlwaysOnTop,
+    #[knuffel(skip)]
+    ToggleWindowAlwaysOnTopById(u64),
     FocusFloating,
     FocusTiling,
     SwitchFocusBetweenFloatingAndTiling,
@@ -675,6 +678,10 @@ impl From<niri_ipc::Action> for Action {
             niri_ipc::Action::MoveWindowToTiling { id: None } => Self::MoveWindowToTiling,
             niri_ipc::Action::MoveWindowToTiling { id: Some(id) } => {
                 Self::MoveWindowToTilingById(id)
+            }
+            niri_ipc::Action::ToggleWindowAlwaysOnTop { id: None } => Self::ToggleWindowAlwaysOnTop,
+            niri_ipc::Action::ToggleWindowAlwaysOnTop { id: Some(id) } => {
+                Self::ToggleWindowAlwaysOnTopById(id)
             }
             niri_ipc::Action::FocusFloating {} => Self::FocusFloating,
             niri_ipc::Action::FocusTiling {} => Self::FocusTiling,

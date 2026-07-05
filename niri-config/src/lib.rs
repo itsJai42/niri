@@ -1882,6 +1882,7 @@ mod tests {
                     ),
                     scroll_factor: None,
                     tiled_state: None,
+                    always_on_top: None,
                     background_effect: BackgroundEffectRule {
                         xray: None,
                         blur: None,

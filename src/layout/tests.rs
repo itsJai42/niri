@@ -39,6 +39,7 @@ struct TestWindowInner {
     sizing_mode: Cell<SizingMode>,
     is_windowed_fullscreen: Cell<bool>,
     is_pending_windowed_fullscreen: Cell<bool>,
+    is_always_on_top: Cell<bool>,
     animate_next_configure: Cell<bool>,
     animation_snapshot: RefCell<Option<LayoutElementRenderSnapshot>>,
     rules: ResolvedWindowRules,
@@ -91,6 +92,7 @@ impl TestWindow {
             sizing_mode: Cell::new(SizingMode::Normal),
             is_windowed_fullscreen: Cell::new(false),
             is_pending_windowed_fullscreen: Cell::new(false),
+            is_always_on_top: Cell::new(false),
             animate_next_configure: Cell::new(false),
             animation_snapshot: RefCell::new(None),
             rules: params.rules.unwrap_or_default(),
@@ -230,7 +232,19 @@ impl LayoutElement for TestWindow {
 
     fn set_active_in_column(&mut self, _active: bool) {}
 
+    fn is_floating(&self) -> bool {
+        false
+    }
+
     fn set_floating(&mut self, _floating: bool) {}
+
+    fn is_always_on_top(&self) -> bool {
+        self.0.is_always_on_top.get()
+    }
+
+    fn set_always_on_top(&mut self, value: bool) {
+        self.0.is_always_on_top.set(value);
+    }
 
     fn sizing_mode(&self) -> SizingMode {
         self.0.sizing_mode.get()
@@ -1653,6 +1667,45 @@ fn check_ops_with_options(
     let mut layout = Layout::with_options(Clock::with_time(Duration::ZERO), options);
     check_ops_on_layout(&mut layout, ops);
     layout
+}
+
+#[test]
+fn always_on_top_floating_window_stays_visible_over_fullscreen() {
+    let mut layout = check_ops([
+        Op::AddOutput(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(1),
+        },
+        Op::FullscreenWindow(1),
+        Op::Communicate(1),
+        Op::AddWindow {
+            params: TestWindowParams::new(2),
+        },
+        Op::SetWindowFloating {
+            id: Some(2),
+            floating: true,
+        },
+    ]);
+
+    layout.toggle_window_always_on_top(Some(&2));
+    // Refocus the fullscreen window, which used to hide the whole floating space.
+    layout.activate_window(&1);
+    Op::CompleteAnimations.apply(&mut layout);
+    layout.verify_invariants();
+
+    let ws = layout.active_workspace().unwrap();
+    assert!(ws.render_above_top_layer());
+    assert!(!ws.is_floating_visible());
+
+    let pinned_visible = ws
+        .tiles_with_render_positions()
+        .find(|(tile, _, _)| *tile.window().id() == 2)
+        .map(|(_, _, visible)| visible)
+        .unwrap();
+    assert!(
+        pinned_visible,
+        "always-on-top window must stay visible above a focused fullscreen window"
+    );
 }
 
 #[test]

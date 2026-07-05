@@ -149,6 +149,7 @@ impl CompositorHandler for State {
                     // before mapping, so we need to compute open_floating at the last possible
                     // moment, that is here.
                     let is_floating = rules.compute_open_floating(toplevel);
+                    let always_on_top = rules.always_on_top.unwrap_or(false);
 
                     // Figure out if we should activate the window.
                     let activate = rules.open_focused.map(|focus| {
@@ -195,10 +196,12 @@ impl CompositorHandler for State {
                     // The mapped pre-commit hook deals with dma-bufs on its own.
                     self.remove_default_dmabuf_pre_commit_hook(surface);
                     let hook = add_mapped_toplevel_pre_commit_hook(toplevel);
-                    let mapped = {
+                    let mut mapped = {
                         let config = self.niri.config.borrow();
                         Mapped::new(window, rules, hook, &config)
                     };
+                    mapped.set_always_on_top(always_on_top);
+                    let always_on_top = mapped.is_always_on_top();
                     let window = mapped.window.clone();
 
                     let target = if let Some(p) = &parent {
@@ -221,6 +224,10 @@ impl CompositorHandler for State {
                         activate,
                     );
                     let output = output.cloned();
+
+                    if always_on_top {
+                        self.niri.layout.update_window_always_on_top(&window, true);
+                    }
 
                     // The window state cannot contain Fullscreen and Maximized at once. Therefore,
                     // if the window ended up fullscreen, then we only know that it is also

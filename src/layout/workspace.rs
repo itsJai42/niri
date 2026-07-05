@@ -1589,9 +1589,12 @@ impl<W: LayoutElement> Workspace<W> {
     ) -> impl Iterator<Item = (&Tile<W>, Point<f64, Logical>, bool)> {
         let scrolling = self.scrolling.tiles_with_render_positions();
 
+        let space_visible = self.is_floating_visible();
         let floating = self.floating.tiles_with_render_positions();
-        let visible = self.is_floating_visible();
-        let floating = floating.map(move |(tile, pos)| (tile, pos, visible));
+        let floating = floating.map(move |(tile, pos)| {
+            let visible = space_visible || tile.window().is_always_on_top();
+            (tile, pos, visible)
+        });
 
         floating.chain(scrolling)
     }
@@ -1648,16 +1651,21 @@ impl<W: LayoutElement> Workspace<W> {
         focus_ring: bool,
         push: &mut dyn FnMut(WorkspaceRenderElement<R>),
     ) {
-        if !self.is_floating_visible() {
+        let visible = self.is_floating_visible();
+        if !visible && !self.floating.has_always_on_top_window() {
             return;
         }
 
         let view_rect = Rectangle::from_size(self.view_size);
         let floating_focus_ring = focus_ring && self.floating_is_active();
-        self.floating
-            .render(ctx, xray_pos, view_rect, floating_focus_ring, &mut |elem| {
-                push(elem.into())
-            });
+        self.floating.render(
+            ctx,
+            xray_pos,
+            view_rect,
+            floating_focus_ring,
+            visible,
+            &mut |elem| push(elem.into()),
+        );
     }
 
     pub fn render_shadow<R: NiriRenderer>(
@@ -1757,14 +1765,14 @@ impl<W: LayoutElement> Workspace<W> {
 
     pub fn window_under(&self, pos: Point<f64, Logical>) -> Option<(&W, HitType)> {
         // This logic is consistent with tiles_with_render_positions().
-        if self.is_floating_visible() {
-            if let Some(rv) = self
-                .floating
-                .tiles_with_render_positions()
-                .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
-            {
-                return Some(rv);
-            }
+        let space_visible = self.is_floating_visible();
+        if let Some(rv) = self
+            .floating
+            .tiles_with_render_positions()
+            .filter(|(tile, _)| space_visible || tile.window().is_always_on_top())
+            .find_map(|(tile, tile_pos)| HitType::hit_tile(tile, tile_pos, pos))
+        {
+            return Some(rv);
         }
 
         self.scrolling.window_under(pos)
@@ -1810,6 +1818,13 @@ impl<W: LayoutElement> Workspace<W> {
         if !self.floating.update_window(window, serial) {
             self.scrolling.update_window(window, serial);
         }
+    }
+
+    pub fn update_window_always_on_top(&mut self, window: &W::Id, value: bool) -> bool {
+        if !self.floating.has_window(window) {
+            return false;
+        }
+        self.floating.update_window_always_on_top(window, value)
     }
 
     pub fn refresh(&mut self, is_active: bool, is_focused: bool) {

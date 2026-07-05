@@ -281,6 +281,12 @@ impl<W: LayoutElement> FloatingSpace<W> {
         self.tiles.iter()
     }
 
+    pub fn has_always_on_top_window(&self) -> bool {
+        self.tiles
+            .iter()
+            .any(|tile| tile.window().is_always_on_top())
+    }
+
     pub fn tiles_mut(&mut self) -> impl Iterator<Item = &mut Tile<W>> + '_ {
         self.tiles.iter_mut()
     }
@@ -590,6 +596,78 @@ impl<W: LayoutElement> FloatingSpace<W> {
         let data = self.data.remove(from_idx);
         self.tiles.insert(to_idx, tile);
         self.data.insert(to_idx, data);
+    }
+
+    fn pin_window(&mut self, from_idx: usize) {
+        let parent_win = &self.tiles[from_idx].window();
+        let is_parent_child = |tile: &Tile<W>| tile.window().is_child_of(parent_win);
+
+        let to_idx = self
+            .tiles
+            .iter()
+            .take(from_idx)
+            .filter(|tile| !tile.window().is_always_on_top() || is_parent_child(tile))
+            .count();
+
+        let descendants: Vec<usize> = self
+            .tiles
+            .iter()
+            .enumerate()
+            .skip(from_idx + 1)
+            .rev()
+            .filter(|(_, tile)| tile.window().is_child_of(parent_win))
+            .map(|(i, _)| i)
+            .collect();
+
+        let tile = self.tiles.remove(from_idx);
+        let data = self.data.remove(from_idx);
+        self.tiles.insert(to_idx, tile);
+        self.data.insert(to_idx, data);
+
+        let mut idx = to_idx + 1;
+        for descendant_idx in descendants.into_iter().rev() {
+            let adjusted = if descendant_idx > from_idx {
+                descendant_idx - 1
+            } else {
+                descendant_idx
+            };
+            if adjusted != idx - 1 {
+                self.raise_window(adjusted, idx);
+                idx += 1;
+            }
+        }
+    }
+
+    fn unpin_window(&mut self, from_idx: usize) {
+        let to_idx = self
+            .tiles
+            .iter()
+            .take(from_idx)
+            .filter(|tile| tile.window().is_always_on_top())
+            .count();
+
+        if to_idx != from_idx {
+            self.raise_window(from_idx, to_idx);
+        }
+    }
+
+    pub fn update_window_always_on_top(&mut self, id: &W::Id, value: bool) -> bool {
+        let Some(idx) = self.idx_of(id) else {
+            return false;
+        };
+
+        if self.tiles[idx].window().is_always_on_top() == value {
+            return true;
+        }
+
+        self.tiles[idx].window_mut().set_always_on_top(value);
+
+        if value {
+            self.pin_window(idx);
+        } else {
+            self.unpin_window(idx);
+        }
+        true
     }
 
     pub fn start_close_animation_for_tile(
@@ -1062,20 +1140,30 @@ impl<W: LayoutElement> FloatingSpace<W> {
         xray_pos: XrayPos,
         view_rect: Rectangle<f64, Logical>,
         focus_ring: bool,
+        show_all: bool,
         push: &mut dyn FnMut(FloatingSpaceRenderElement<R>),
     ) {
         let scale = Scale::from(self.scale);
 
-        // Draw the closing windows on top of the other windows.
-        //
-        // FIXME: I guess this should rather preserve the stacking order when the window is closed.
-        for closing in self.closing_windows.iter().rev() {
-            let elem = closing.render(ctx.as_gles(), view_rect, scale);
-            push(elem.into());
+        if show_all {
+            // Draw the closing windows on top of the other windows.
+            //
+            // FIXME: I guess this should rather preserve the stacking order when the window is
+            // closed.
+            for closing in self.closing_windows.iter().rev() {
+                let elem = closing.render(ctx.as_gles(), view_rect, scale);
+                push(elem.into());
+            }
         }
 
         let active = self.active_window_id.clone();
         for (tile, tile_pos) in self.tiles_with_render_positions() {
+            // When the space itself is hidden behind a fullscreen window, only always-on-top
+            // tiles should still poke through.
+            if !show_all && !tile.window().is_always_on_top() {
+                continue;
+            }
+
             // For the active tile, draw the focus ring.
             let focus_ring = focus_ring && Some(tile.window().id()) == active.as_ref();
 

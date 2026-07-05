@@ -349,6 +349,18 @@ binds {
 }
 ```
 
+#### `toggle-window-always-on-top`
+
+<sup>Since: next release</sup>
+
+Toggle the always-on-top state of the focused window. If the window is currently tiled, it will be moved to the floating layout first.
+
+```kdl
+binds {
+    Mod+P { toggle-window-always-on-top; }
+}
+```
+
 #### `screenshot`, `screenshot-screen`, `screenshot-window`
 
 Actions for taking screenshots.

@@ -213,7 +213,17 @@ impl LayoutElement for TestWindow {
 
     fn set_active_in_column(&mut self, _active: bool) {}
 
+    fn is_floating(&self) -> bool {
+        false
+    }
+
     fn set_floating(&mut self, _floating: bool) {}
+
+    fn is_always_on_top(&self) -> bool {
+        false
+    }
+
+    fn set_always_on_top(&mut self, _value: bool) {}
 
     fn set_bounds(&self, _bounds: Size<i32, Logical>) {}
 
